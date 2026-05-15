@@ -1,0 +1,13 @@
+{
+  "ckpt_best": "/home/ubuntu/phase66/simulation/simulations/ml_inverse/models/fno_surrogate_jwave_phase7a_cloud_best.pt",
+  "data_path": "/home/ubuntu/phase66/dataset.h5",
+  "n_train_mean_samples": 80,
+  "n_test_samples": 30,
+  "ratio_mean": 0.09358937543242034,
+  "ratio_median": 0.09289593677121917,
+  "verdict": "PASS",
+  "threshold": 0.5,
+  "median_model_err": 40.95937538146973,
+  "median_mean_err": 440.69456481933594,
+  "best_val_h1": 1.1790748782157898
+}

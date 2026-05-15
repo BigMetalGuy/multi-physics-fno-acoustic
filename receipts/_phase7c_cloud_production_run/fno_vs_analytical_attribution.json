@@ -1,0 +1,18 @@
+{
+  "high_quantile": 0.95,
+  "focal_peak_fraction": 0.7,
+  "high_pixels_total": 697002,
+  "high_pixels_focal_overlap": 4480,
+  "high_pixels_in_array": 266363,
+  "high_pixels_out_array": 430639,
+  "fraction_focal": 0.006427528184998034,
+  "fraction_in_array": 0.38215528793317666,
+  "fraction_out_array": 0.6178447120668233,
+  "avg_residual_field_max_pa": 1140.1800537109375,
+  "avg_residual_field_mean_pa": 197.8759002685547,
+  "spatial_shape": [
+    44,
+    44,
+    144
+  ]
+}

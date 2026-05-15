@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "drip-physics-core"
+version = "0.1.0"
+description = "Shared canonical types and parametric design module for Drip 3D simulations + design-tool"
+requires-python = ">=3.11"
+dependencies = [
+    "numpy>=2.2,<3.0",
+    # scipy is imported directly: solve_ivp in design/physics_eval.py and
+    # differential_evolution + LatinHypercube in design/optimizer.py.
+    "scipy>=1.10,<2.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7.0", "ruff", "black"]
+
+# Standalone install layout. Lets the simulation/design repos pull this
+# package directly from the main monorepo via pip's git+ssh URL with
+# `subdirectory=simulations/drip_physics_core`.
+#
+# The package is "flat" — pyproject.toml sits next to __init__.py rather
+# than next to a nested drip_physics_core/ directory. setuptools'
+# packages.find won't see the cwd-itself as a package, so we declare
+# packages explicitly and use package-dir to map "drip_physics_core" to
+# the project root and "drip_physics_core.design" to ./design.
+#
+# Within the monorepo, simulations/pyproject.toml's packages.find
+# discovers this package the same way (it sees `drip_physics_core/` as
+# a sibling subdirectory of `drip_physics/`). The two install paths
+# don't conflict — they target different distribution names
+# (`drip-physics` vs `drip-physics-core`) and the `drip_physics_core`
+# import path is the same either way.
+[tool.setuptools]
+packages = ["drip_physics_core", "drip_physics_core.design"]
+
+[tool.setuptools.package-dir]
+"drip_physics_core" = "."
+"drip_physics_core.design" = "design"

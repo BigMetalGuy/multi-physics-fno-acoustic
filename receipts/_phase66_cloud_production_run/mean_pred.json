@@ -1,0 +1,13 @@
+{
+  "ckpt_best": "/home/ubuntu/phase66/simulation/simulations/ml_inverse/models/fno_surrogate_fem_phase66_cloud_best.pt",
+  "data_path": "/home/ubuntu/phase66/dataset.h5",
+  "n_train_mean_samples": 80,
+  "n_test_samples": 30,
+  "ratio_mean": 0.1438328063240455,
+  "ratio_median": 0.1172495503560464,
+  "verdict": "PASS",
+  "threshold": 0.5,
+  "median_model_err": 30.75600528717041,
+  "median_mean_err": 261.0707702636719,
+  "best_val_h1": 9.947029182434083
+}

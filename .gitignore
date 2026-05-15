@@ -1,0 +1,43 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+*.egg
+.eggs/
+
+# venv
+.venv/
+venv/
+env/
+
+# Datasets and checkpoints (large — never commit)
+*.h5
+*.pt
+*.npz
+*.tar.gz
+
+# Local runs / scratch
+/runs/
+/tmp/
+/scratch/
+*.tmp
+*.log
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Notebooks
+.ipynb_checkpoints/
+*.ipynb
+
+# Generated meshes
+*.msh
+*.vtu
+*.vtk
+*.xdmf
+*.h5_mesh

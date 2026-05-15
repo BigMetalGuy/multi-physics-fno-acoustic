@@ -1,0 +1,30 @@
+# Core ML training stack
+torch>=2.5
+neuraloperator==2.0.0
+tensorly
+tensorly-torch
+torch_harmonics==0.7.4
+
+# JAX (for j-Wave + FEM forward solvers)
+jax[cuda12]
+jaxlib
+jwave
+
+# FEM stack (jax_fem has multiple transitive deps that need explicit install)
+jax-fem
+fenics-basix
+fenics-ufl
+petsc4py
+gmsh
+pyfiglet
+pydantic
+
+# Data + scientific
+h5py
+scipy>=1.14
+numpy>=2.2,<3.0
+matplotlib
+meshio
+
+# CLI / utilities
+pyyaml
