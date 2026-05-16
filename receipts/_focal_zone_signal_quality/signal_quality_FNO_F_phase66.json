@@ -1,0 +1,198 @@
+{
+  "label": "FNO_F_phase66",
+  "n_samples": 10,
+  "grid_shape": [
+    32,
+    32,
+    32
+  ],
+  "grid_extent_m": [
+    -0.03,
+    0.03,
+    -0.03,
+    0.03,
+    0.1,
+    0.3
+  ],
+  "focal_zone_def": {
+    "r_max_m": 0.03,
+    "z_range_m": [
+      0.1,
+      0.3
+    ]
+  },
+  "n_focal_voxels": 23680,
+  "n_total_voxels": 32768,
+  "aggregate": {
+    "peak_to_mean": {
+      "mean": 5.9901903094460005,
+      "median": 5.852101386008151,
+      "min": 5.282188116638654,
+      "max": 7.356736984452831,
+      "std": 0.6140020061848844
+    },
+    "coeff_var": {
+      "mean": 0.6343859219307639,
+      "median": 0.6353999268317367,
+      "min": 0.5897348226847169,
+      "max": 0.6736058397067205,
+      "std": 0.023713237905025327
+    },
+    "energy_in_focal": {
+      "mean": 0.7474155212567107,
+      "median": 0.7463708574755705,
+      "min": 0.7241800906180328,
+      "max": 0.7798982308275574,
+      "std": 0.016027520908887503
+    },
+    "db_dynamic_range": {
+      "mean": 15.505774850913358,
+      "median": 15.345855021641173,
+      "min": 14.45627727692334,
+      "max": 17.333704591442196,
+      "std": 0.8524777565357405
+    },
+    "p_max_focal": {
+      "mean": 1422.8969604492188,
+      "median": 1444.9288330078125,
+      "min": 1016.7880859375,
+      "max": 1761.0621337890625,
+      "std": 229.16624859173314
+    },
+    "p_mean_focal": {
+      "mean": 236.5059844970703,
+      "median": 243.80562591552734,
+      "min": 192.4937286376953,
+      "max": 259.5785827636719,
+      "std": 21.830291073222234
+    }
+  },
+  "verdict": {
+    "structured_threshold": "peak_to_mean > 4 AND db_dynamic_range > 12 dB",
+    "focused_threshold": "energy_in_focal > 0.05"
+  },
+  "per_sample": [
+    {
+      "p_max_focal": 1485.2301025390625,
+      "p_mean_focal": 251.43682861328125,
+      "p_std_focal": 163.7243194580078,
+      "peak_to_mean": 5.906971189265988,
+      "coeff_var": 0.6511548859448176,
+      "db_dynamic_range": 15.427297052593856,
+      "energy_in_focal": 0.7668990701894433,
+      "n_focal_voxels": 23680,
+      "n_total_voxels": 32768
+    },
+    {
+      "p_max_focal": 1381.4805908203125,
+      "p_mean_focal": 242.3713836669922,
+      "p_std_focal": 142.93484497070312,
+      "peak_to_mean": 5.69985024601092,
+      "coeff_var": 0.5897348226847169,
+      "db_dynamic_range": 15.117268909290297,
+      "energy_in_focal": 0.748766832281829,
+      "n_focal_voxels": 23680,
+      "n_total_voxels": 32768
+    },
+    {
+      "p_max_focal": 1404.6275634765625,
+      "p_mean_focal": 229.76406860351562,
+      "p_std_focal": 142.5904541015625,
+      "peak_to_mean": 6.113347365468224,
+      "coeff_var": 0.6205950955178233,
+      "db_dynamic_range": 15.72558146927183,
+      "energy_in_focal": 0.7537621635114715,
+      "n_focal_voxels": 23680,
+      "n_total_voxels": 32768
+    },
+    {
+      "p_max_focal": 1016.7880859375,
+      "p_mean_focal": 192.4937286376953,
+      "p_std_focal": 117.11325073242188,
+      "peak_to_mean": 5.282188116638654,
+      "coeff_var": 0.6084003440592507,
+      "db_dynamic_range": 14.45627727692334,
+      "energy_in_focal": 0.7241800906180328,
+      "n_focal_voxels": 23680,
+      "n_total_voxels": 32768
+    },
+    {
+      "p_max_focal": 1735.2637939453125,
+      "p_mean_focal": 254.50611877441406,
+      "p_std_focal": 167.9528350830078,
+      "peak_to_mean": 6.818161395496325,
+      "coeff_var": 0.6599166884151644,
+      "db_dynamic_range": 16.673345547548998,
+      "energy_in_focal": 0.7798982308275574,
+      "n_focal_voxels": 23680,
+      "n_total_voxels": 32768
+    },
+    {
+      "p_max_focal": 1761.0621337890625,
+      "p_mean_focal": 239.38087463378906,
+      "p_std_focal": 150.68511962890625,
+      "peak_to_mean": 7.356736984452831,
+      "coeff_var": 0.6294785239607307,
+      "db_dynamic_range": 17.333704591442196,
+      "energy_in_focal": 0.7404746896867752,
+      "n_focal_voxels": 23680,
+      "n_total_voxels": 32768
+    },
+    {
+      "p_max_focal": 1067.646484375,
+      "p_mean_focal": 199.38885498046875,
+      "p_std_focal": 128.66949462890625,
+      "peak_to_mean": 5.3545945909543535,
+      "coeff_var": 0.6453193918060773,
+      "db_dynamic_range": 14.574531898963496,
+      "energy_in_focal": 0.7344314429370279,
+      "n_focal_voxels": 23680,
+      "n_total_voxels": 32768
+    },
+    {
+      "p_max_focal": 1503.5545654296875,
+      "p_mean_focal": 250.8995361328125,
+      "p_std_focal": 156.64468383789062,
+      "peak_to_mean": 5.992655819952525,
+      "coeff_var": 0.6243322975095956,
+      "db_dynamic_range": 15.552386705981164,
+      "energy_in_focal": 0.7439748826693121,
+      "n_focal_voxels": 23680,
+      "n_total_voxels": 32768
+    },
+    {
+      "p_max_focal": 1504.837158203125,
+      "p_mean_focal": 259.5785827636719,
+      "p_std_focal": 166.47328186035156,
+      "peak_to_mean": 5.797231582750315,
+      "coeff_var": 0.6413213297027429,
+      "db_dynamic_range": 15.26441299068849,
+      "energy_in_focal": 0.7517963878657656,
+      "n_focal_voxels": 23680,
+      "n_total_voxels": 32768
+    },
+    {
+      "p_max_focal": 1368.4791259765625,
+      "p_mean_focal": 245.2398681640625,
+      "p_std_focal": 165.19500732421875,
+      "peak_to_mean": 5.5801658034698765,
+      "coeff_var": 0.6736058397067205,
+      "db_dynamic_range": 14.932942066429916,
+      "energy_in_focal": 0.7299714219798931,
+      "n_focal_voxels": 23680,
+      "n_total_voxels": 32768
+    }
+  ],
+  "indices": [
+    429,
+    445,
+    470,
+    1007,
+    2162,
+    2191,
+    3268,
+    3485,
+    3863,
+    4289
+  ]
+}

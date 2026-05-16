@@ -185,6 +185,59 @@ def rel_l2_per_sample(a: torch.Tensor, b: torch.Tensor) -> np.ndarray:
     return (num / den).cpu().numpy()
 
 
+def rel_l2_scale_normalized(a: torch.Tensor, b: torch.Tensor) -> np.ndarray:
+    """Per-sample rel_l2 after L2-normalizing both fields.
+
+    Factors out amplitude / scale mismatch: if a and b are the same
+    *shape* but different magnitudes, this returns ~0. If they're
+    genuinely different shapes, this stays near the unnormalized rel_l2.
+    """
+    norm_a = torch.sqrt((a ** 2).flatten(1).sum(dim=1)).clamp_min(1e-12)
+    norm_b = torch.sqrt((b ** 2).flatten(1).sum(dim=1)).clamp_min(1e-12)
+    a_hat = a / norm_a.view(-1, *[1] * (a.dim() - 1))
+    b_hat = b / norm_b.view(-1, *[1] * (b.dim() - 1))
+    diff = a_hat - b_hat
+    return torch.sqrt((diff ** 2).flatten(1).sum(dim=1)).cpu().numpy()
+
+
+def field_norm(x: torch.Tensor) -> np.ndarray:
+    """||x||_2 per sample (B, 2, ...)  -> (B,)."""
+    return torch.sqrt((x ** 2).flatten(1).sum(dim=1)).cpu().numpy()
+
+
+def render_compare_slice(
+    out_f: torch.Tensor,  # (1, 2, fx, fy, fz)
+    out_j_focal: torch.Tensor,  # (1, 2, fx, fy, fz)
+    sample_idx: int,
+    real_idx: int,
+    out_dir: Path,
+) -> None:
+    """Save a 3-panel mid-z slice of |P| for FNO_F, FNO_J_focal, and |diff|."""
+    import matplotlib.pyplot as plt
+
+    z_mid = out_f.shape[-1] // 2
+    p_f = torch.sqrt(out_f[0, 0, :, :, z_mid] ** 2 + out_f[0, 1, :, :, z_mid] ** 2).cpu().numpy()
+    p_j = torch.sqrt(out_j_focal[0, 0, :, :, z_mid] ** 2 + out_j_focal[0, 1, :, :, z_mid] ** 2).cpu().numpy()
+    diff = np.abs(p_f - p_j)
+    # Shared colorbar for the two intensity panels for easy visual comparison
+    vmax = max(p_f.max(), p_j.max())
+
+    fig, axes = plt.subplots(1, 3, figsize=(12, 4), constrained_layout=True)
+    im0 = axes[0].imshow(p_f.T, origin="lower", vmin=0, vmax=vmax, cmap="viridis")
+    axes[0].set_title(f"|P| FNO_F  ||={np.linalg.norm(p_f):.1e}")
+    plt.colorbar(im0, ax=axes[0])
+    im1 = axes[1].imshow(p_j.T, origin="lower", vmin=0, vmax=vmax, cmap="viridis")
+    axes[1].set_title(f"|P| FNO_J_focal  ||={np.linalg.norm(p_j):.1e}")
+    plt.colorbar(im1, ax=axes[1])
+    im2 = axes[2].imshow(diff.T, origin="lower", cmap="magma")
+    axes[2].set_title(f"||P_F| - |P_J||  max={diff.max():.1e}")
+    plt.colorbar(im2, ax=axes[2])
+    fig.suptitle(f"sample idx={real_idx}, z mid-slice")
+    out_path = out_dir / f"compare_slice_idx{real_idx:05d}.png"
+    fig.savefig(out_path, dpi=110)
+    plt.close(fig)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--ckpt-f", required=True)
@@ -194,6 +247,8 @@ def main():
     ap.add_argument("--phases-h5", required=True, help="HDF5 with 'phases' (N, 120)")
     ap.add_argument("--out-dir", required=True)
     ap.add_argument("--n-samples", type=int, default=20)
+    ap.add_argument("--n-render", type=int, default=0,
+                    help="Render mid-z compare slice for the first N samples (0 = no rendering).")
     ap.add_argument("--seed", type=int, default=42)
     ap.add_argument("--device", default="cpu")
     args = ap.parse_args()
@@ -233,24 +288,42 @@ def main():
     phases = torch.from_numpy(all_phases[idx]).to(device)  # (N, 120)
     print(f"[data] {len(phases)} test phases from {args.phases_h5} (indices: {idx[:5].tolist()}...)")
 
-    # Forward both (batched)
+    # Forward both, with sanity-check metrics + optional rendering
     rl2_values = []
+    rl2_scale_norm_values = []
+    norm_f_values = []
+    norm_j_values = []
     with torch.no_grad():
         for i in range(len(phases)):
             x = phases[i:i+1]  # (1, 120)
             out_f_n = model_f(x)  # (1, 2, 32, 32, 32) normalized
             out_j_n = model_j(x)  # (1, 2, 44, 44, 144) normalized
-            # Denormalize to physical Pa
             out_f = denormalize(out_f_n, mean_f, std_f, eps_f)
             out_j = denormalize(out_j_n, mean_j, std_j, eps_j)
-            # Resample FNO_J to FNO_F's focal-zone grid
             out_j_focal = resample_to_focal_zone(out_j, j_extent, f_extent, f_shape)
-            # Relative L2 (using FNO_F as reference)
+
             rl2 = rel_l2_per_sample(out_j_focal, out_f)
+            rl2_scaled = rel_l2_scale_normalized(out_j_focal, out_f)
+            nf = field_norm(out_f)
+            nj = field_norm(out_j_focal)
+
             rl2_values.append(float(rl2[0]))
-            print(f"  sample {i+1}/{len(phases)}  rel_l2(FNO_J_focal vs FNO_F) = {rl2[0]:.4f}")
+            rl2_scale_norm_values.append(float(rl2_scaled[0]))
+            norm_f_values.append(float(nf[0]))
+            norm_j_values.append(float(nj[0]))
+
+            print(f"  sample {i+1:2d}/{len(phases)}  rl2={rl2[0]:.4f}  rl2_scale_norm={rl2_scaled[0]:.4f}  "
+                  f"||P_F||={nf[0]:.2e}  ||P_J||={nj[0]:.2e}  ratio_J/F={nj[0]/max(nf[0], 1e-12):.3f}")
+
+            if i < args.n_render:
+                render_compare_slice(out_f, out_j_focal, sample_idx=i, real_idx=int(idx[i]), out_dir=out_dir)
 
     arr = np.array(rl2_values)
+    arr_sn = np.array(rl2_scale_norm_values)
+    nf_arr = np.array(norm_f_values)
+    nj_arr = np.array(norm_j_values)
+    ratio = nj_arr / np.clip(nf_arr, 1e-12, None)
+
     summary = {
         "mode": "fno_F_vs_fno_J_focal_overlap",
         "n_samples": len(arr),
@@ -259,8 +332,19 @@ def main():
         "rel_l2_phys_p90":    float(np.quantile(arr, 0.9)),
         "rel_l2_phys_max":    float(arr.max()),
         "rel_l2_phys_min":    float(arr.min()),
+        "rel_l2_scale_normalized_mean":   float(arr_sn.mean()),
+        "rel_l2_scale_normalized_median": float(np.median(arr_sn)),
+        "rel_l2_scale_normalized_p90":    float(np.quantile(arr_sn, 0.9)),
+        "field_norm_F_mean": float(nf_arr.mean()),
+        "field_norm_J_focal_mean": float(nj_arr.mean()),
+        "amplitude_ratio_J_over_F_mean": float(ratio.mean()),
+        "amplitude_ratio_J_over_F_median": float(np.median(ratio)),
         "indices": idx.tolist(),
         "per_sample_rel_l2_phys": rl2_values,
+        "per_sample_rel_l2_scale_normalized": rl2_scale_norm_values,
+        "per_sample_field_norm_F": norm_f_values,
+        "per_sample_field_norm_J_focal": norm_j_values,
+        "per_sample_amplitude_ratio_J_over_F": ratio.tolist(),
         "fno_F_extent_m": f_extent,
         "fno_F_grid_shape": f_shape,
         "fno_J_extent_m": j_extent,
@@ -268,8 +352,16 @@ def main():
         "comparison_region": "FNO_F native focal zone (60×60×200mm at 32³)",
     }
     (out_dir / "summary.json").write_text(json.dumps(summary, indent=2))
-    print(f"\n[done] mean rel_l2 = {arr.mean():.4f}  median = {np.median(arr):.4f}")
+
+    print()
+    print(f"[done] rl2_phys                mean={arr.mean():.4f}  median={np.median(arr):.4f}")
+    print(f"[done] rl2_scale_normalized    mean={arr_sn.mean():.4f}  median={np.median(arr_sn):.4f}")
+    print(f"[done] ||P_F||                 mean={nf_arr.mean():.2e}  median={np.median(nf_arr):.2e}")
+    print(f"[done] ||P_J_focal||           mean={nj_arr.mean():.2e}  median={np.median(nj_arr):.2e}")
+    print(f"[done] amplitude_ratio J/F     mean={ratio.mean():.3f}  median={np.median(ratio):.3f}")
     print(f"[done] wrote {out_dir/'summary.json'}")
+    if args.n_render > 0:
+        print(f"[done] rendered {min(args.n_render, len(phases))} mid-z slice PNGs in {out_dir}/")
 
 
 if __name__ == "__main__":
