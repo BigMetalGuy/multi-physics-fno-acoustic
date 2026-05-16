@@ -134,19 +134,16 @@ The cloud-sprint scripts under `cloud_sprint/` are the full launchers
 All code in this repository was written by AI coding assistants. Neither
 author is a programmer by training — our backgrounds are in mechanical
 engineering, acoustics, thermal/fluids systems, and chemical/materials
-science, applied to a real physical system (a metal additive-manufacturing
-prototype using phased ultrasonic transducer arrays to manipulate falling
-metal droplets).
+science.
 
 What we own and are responsible for:
 
 * **Problem formulation.** The decision to build a multi-physics surrogate
   stack (analytical / j-Wave / FEM-coupled) and the disagreement-weighted
   distillation strategy is ours. The cylindrical-chamber regime, the
-  L1-array geometry (5 cm radius × 40 cm height, 10 rings × 12
-  transducers at 40 kHz), the choice of focal zone (z ∈ [100, 300] mm,
-  r < 30 mm) and which physics terms each track captures or misses are
-  domain decisions grounded in the actual hardware.
+  choice of focal zone (z ∈ [100, 300] mm, r < 30 mm) and which physics
+  terms each track captures or misses are domain decisions grounded in
+  the actual hardware.
 * **Physics correctness.** The Helmholtz weak form, the Bermúdez 2007
   PML formulation, the Eckart streaming approximation, the Gor'kov
   radiation force, and the residual-prior architecture choices were
@@ -184,8 +181,8 @@ What the AI did:
   pattern (mirror loops, checkpoint backup with snapshot-then-scp,
   ETA-vs-deadline monitors), and orchestrated the long-running Lambda
   sessions.
-* Drafted Linear issues, the public-repo file structure, the
-  documentation in this README, and the public-vs-private code split.
+* Drafted the public-repo file structure, the documentation in this
+  README, and the public-vs-private code split.
 
 The AI is a tool we use because it's faster than learning Rust-style
 type systems and PyTorch idioms from scratch. The decisions above are
