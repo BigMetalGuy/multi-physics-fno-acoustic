@@ -164,12 +164,12 @@ What we own and are responsible for:
   human judgment calls.
 * **Bug triage and root-cause analysis.** The discovery that
   `DEFAULT_SOLVER_OPTIONS = {"spsolve_solver": {}}` silently fell
-  through to BiCGSTAB on indefinite Helmholtz systems (real bug in the
-  Drip codebase, fixed in commit `d184ba4`), and the realization that
-  Phase 7c v1's mean_pred=0.193 PASS was a false positive masking
-  transducer-wall-only learning, were debugging calls made by reading
-  rendered output and reasoning about the physics — not by the AI
-  proposing it unprompted.
+  through to BiCGSTAB on indefinite Helmholtz systems (real bug, fixed
+  in commit `d184ba4`), and the realization that Phase 7c v1's
+  mean_pred=0.193 PASS was a false positive masking transducer-wall-
+  only learning, were debugging calls made by reading rendered output
+  and reasoning about the physics — not by the AI proposing it
+  unprompted.
 
 What the AI did:
 
