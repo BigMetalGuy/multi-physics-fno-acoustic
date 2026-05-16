@@ -129,6 +129,70 @@ PYTHONPATH=. python -m ml_inverse.disagreement_analysis \
 The cloud-sprint scripts under `cloud_sprint/` are the full launchers
 (dataset gen → train → eval) used for the Phase 6.6 / 7a / 7c PASS runs.
 
+## AI use
+
+All code in this repository was written by AI coding assistants. Neither
+author is a programmer by training — our backgrounds are in mechanical
+engineering, acoustics, thermal/fluids systems, and chemical/materials
+science, applied to a real physical system (a metal additive-manufacturing
+prototype using phased ultrasonic transducer arrays to manipulate falling
+metal droplets).
+
+What we own and are responsible for:
+
+* **Problem formulation.** The decision to build a multi-physics surrogate
+  stack (analytical / j-Wave / FEM-coupled) and the disagreement-weighted
+  distillation strategy is ours. The cylindrical-chamber regime, the
+  L1-array geometry (5 cm radius × 40 cm height, 10 rings × 12
+  transducers at 40 kHz), the choice of focal zone (z ∈ [100, 300] mm,
+  r < 30 mm) and which physics terms each track captures or misses are
+  domain decisions grounded in the actual hardware.
+* **Physics correctness.** The Helmholtz weak form, the Bermúdez 2007
+  PML formulation, the Eckart streaming approximation, the Gor'kov
+  radiation force, and the residual-prior architecture choices were
+  reviewed against published physics; the validation cascade
+  (analytical / j-Wave / FEM three-way residual + AM-Bench thermal
+  benchmark) was designed to catch physics errors in any single solver.
+* **Evaluation methodology.** The choice to use `mean_pred_sanity` as a
+  PASS gate, then to add the `focal_zone_signal_quality` gate after it
+  surfaced a false-positive PASS, are our calls. The interpretation of
+  the disagreement matrix (FNO_F vs FNO_J L1 = 1.07 turning out to be
+  "one model converged, the other was undertrained at the interior" not
+  "complementary physics" — until the retrain) is our reading of the
+  rendered evidence.
+* **Compute decisions.** Cloud spend ($~80 to date, ~$30 per training
+  sprint), instance-type tradeoffs (A100 vs A10 vs CPU), kill-switch
+  caps, dataset gen / pull / verify gates, and the choice to retrain
+  rather than build FNO_combined on top of a broken FNO_J L1 are all
+  human judgment calls.
+* **Bug triage and root-cause analysis.** The discovery that
+  `DEFAULT_SOLVER_OPTIONS = {"spsolve_solver": {}}` silently fell
+  through to BiCGSTAB on indefinite Helmholtz systems (real bug in the
+  Drip codebase, fixed in commit `d184ba4`), and the realization that
+  Phase 7c v1's mean_pred=0.193 PASS was a false positive masking
+  transducer-wall-only learning, were debugging calls made by reading
+  rendered output and reasoning about the physics — not by the AI
+  proposing it unprompted.
+
+What the AI did:
+
+* Wrote essentially all the Python (training loop, FNO model wrapping
+  `neuraloperator`, j-Wave and FEM forward backends, dataset generators,
+  inverse-design loop, distillation pipeline, all evaluation scripts,
+  this README).
+* Wrote the cloud-sprint shell runners, set up the multi-layer vigilance
+  pattern (mirror loops, checkpoint backup with snapshot-then-scp,
+  ETA-vs-deadline monitors), and orchestrated the long-running Lambda
+  sessions.
+* Drafted Linear issues, the public-repo file structure, the
+  documentation in this README, and the public-vs-private code split.
+
+The AI is a tool we use because it's faster than learning Rust-style
+type systems and PyTorch idioms from scratch. The decisions above are
+where the domain knowledge actually mattered.
+
+— Jamie Marwell & Emma Blemaster
+
 ## License
 
 MIT — see LICENSE.
