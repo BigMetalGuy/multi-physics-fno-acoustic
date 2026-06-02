@@ -30,16 +30,68 @@ distill a student model for real-time inference.
 
 ## Current state
 
-| Phase | Model | Geometry | mean_pred ratio | Verdict |
+| Phase | Model | Geometry | mean_pred / val_h1 | Verdict |
 |---|---|---|---|---|
 | 6.6b | FNO_F | 32³ cubic | 0.144 | **PASS** |
 | 7a   | FNO_J | 32×32×96 mini-array | 0.094 | **PASS** |
 | 7c   | FNO_J | 44×44×144 L1 cylinder | 0.193 | **PASS** |
 | —    | student v1 (distilled from FNO_J) | — | — | **23,288× speedup, 0.479 ms inference** |
-| 7d *(in progress)* | FNO_F retrain | 44×44×144 L1 cylinder | — | Pending |
+| 7d v1/v2 | FNO_F (fixed bed_temp) | 56×56×160 L1 cylinder | val_h1 ≈ 4.0 | **FLATLINE** — diagnosed as hidden-conditioning failure |
+| 7d v3 *(in progress)* | FNO_F thermal-aware | 56×56×160 L1 cylinder | smoke val_h1 1.65→1.09 in 5 ep | descending; 50-ep real underway |
 
 All PASS receipts (mean_pred.json, disagreement images, training logs)
 live in `receipts/`.
+
+### The v2 → v3 thermal-aware extension
+
+Phase 7d's first FNO_F attempts on the L1 cylinder dataset (5000 configs,
+bed_temp fixed at 800 K) **never trained**: val_h1 sat at exactly 4.0 for
+50 epochs. Voxel CV was only 21%. We doubled it to 43% by re-generating
+with per-config random bed_temp ∈ [400, 1000] K (the v2.5 dataset) — but
+val_h1 stayed at exactly 4.0 again.
+
+Diagnosis: bed_temp is a **hidden conditioning variable**. The FEM
+forward solves Helmholtz with temperature-dependent density ρ(T) and
+speed of sound c₀(T); varying bed_temp produces different fields for the
+same transducer phases. Without bed_temp as a model input, the same
+phase vector maps to multiple correct targets — a non-functional regression
+task. The optimal predictor under L² loss is the conditional mean, which
+for this dataset happens to be ≈ zero. Val_h1 = 4.0 = the predict-zero
+ratio. The model wasn't failing — it was correctly predicting the conditional
+mean of an ill-posed regression.
+
+**v3 fix.** Pack `bed_temp_K` as the 121st input channel; reshape the
+conditioning MLP to ingest the full vector; carry thermal context all the
+way into the FNO's spatial conditioning. Gen pipeline writes `bed_temp_K`
+as a first-class HDF5 column at generation time. 7000-config dataset.
+
+**The MLOps wrinkle**: v3 with LR=1e-3 also flatlined, but at a different
+constant (val_h1 = 2.000 exactly for 5 epochs). A diagnostic forward pass
+on real training samples revealed the model output had collapsed to
+`mean|.| = 0.003` against a unit-norm target — a degenerate predict-zero
+attractor. Cause: conditioning MLP output had std ≈ 6 (phases are raw
+radians ∈ [0, 2π], not unit-normalized), gradient explosion at LR=1e-3
+crushed the FNO into the zero attractor. LR=1e-4 stays in the descent
+basin: val_h1 1.65 → 1.09 in 5 epochs. 50-ep real fired with LR=1e-4.
+
+### Dataset generation pipeline
+
+7000 configs at 56×56×160 production grid, sharded across two machines
+in parallel: 5000 configs on a 12-core Ryzen 9 5900X workstation
+(12 parallel FEM workers, ~17 s/config), 2000 configs on an Apple M2
+Max laptop (8 workers — Apple Accelerate's sparse spsolve ran ~3×
+faster per core than the Ryzen + scipy path, a result we didn't predict).
+Each box wrote its own per-worker HDF5 chunks; final dataset assembled
+by axis-0 concatenation of per-config datasets plus shallow copy of
+shared groups (grid coordinates). Disjoint base seeds (43 and 2,000,000)
+guarantee no duplicate configs. ~2 h wall vs. ~5 h single-machine
+extrapolation.
+
+For cluster delivery, the dataset goes through Cloudflare R2 (S3-
+compatible, multipart upload at 64 MB chunks). `kubectl cp` and
+`kubectl exec ... cat` both silently truncated 16 GB files on first
+attempts (2–5 MB short, undetected without a size check), so the R2
+intermediary is the canonical transport.
 
 ## Repository layout
 
