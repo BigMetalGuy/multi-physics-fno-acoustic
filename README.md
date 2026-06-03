@@ -74,6 +74,55 @@ radians ∈ [0, 2π], not unit-normalized), gradient explosion at LR=1e-3
 crushed the FNO into the zero attractor. LR=1e-4 stays in the descent
 basin: val_h1 1.65 → 1.09 in 5 epochs. 50-ep real fired with LR=1e-4.
 
+### Phase 7d post-mortem: representational ceiling, not training ceiling
+
+Three 50-epoch runs (520, 603) plus four hyperparameter smokes (446, 469,
+565, 566) converged on **val_h1 ≈ 1.94** as an apparent floor. The natural
+read was "model is overfitting" or "needs more compute." Both wrong.
+
+A direct test of the architecture's representational capacity revealed the
+actual ceiling: **projecting the target fields onto the FNO's 8×8×24
+truncated Fourier basis recovers only ~17% of the target signal**
+(relative L² = 0.83 between target and truncated-target). That's the
+architectural floor before any model is involved. The trained model's
+relative L² = 0.73 sits at ~70% of that representable maximum.
+
+Independently, when running the existing `focal_zone_signal_quality` gate
+on 520's best.pt we initially read E_focal = 0.000 as evidence of "wall-
+dominated learning" — the same false-positive failure mode the public
+repo flagged for Phase 7c v1. But sampling 100 random training-set
+*targets* showed median E_focal = 0.003 (vs uniform-distribution baseline
+0.0395). The targets themselves put almost no energy in the focal zone
+because forward FEM with *random* transducer phases produces diffuse
+interference patterns. Focal points only emerge under *focused* (inverse-
+designed) phases. The gate is built for inverse-design outputs, not
+forward-trained surrogates evaluated on random-phase splits. The model
+matching ~0 focal-zone energy on random-phase targets is correct
+behavior, not failure.
+
+**The actually informative next axes:**
+
+- **Higher Fourier mode counts.** 12×12×36 (3× more spectral params,
+  ~400M total) is a reasonable first step; 16×16×48 is 8× more
+  (~1B params). Test how much the truncation ceiling moves.
+- **Cylindrical-harmonics basis** instead of Cartesian Fourier. The
+  chamber geometry has azimuthal symmetry the model is currently
+  forced to learn from scratch.
+- **Hybrid FNO + CNN/MLP head** so high-frequency local structure
+  (which the truncated Fourier basis misses) gets a dedicated decoder.
+
+Higher hidden_channels would add optimization capacity without addressing
+the truncation ceiling, so it's not the lever. Same with more training
+data — the model is already capturing 70% of the representable space.
+
+**Methodological lesson:** when val plateaus, distinguish *optimization
+ceiling* from *representational ceiling* before scaling compute. The
+representational ceiling is measurable in minutes by projecting targets
+through the model's mode budget; the optimization ceiling is what
+hyperparameter sweeps actually address. We spent ~80 GPU-hours sweeping
+LR (520 → 565 → 603) before measuring the representational ceiling
+that explained everything.
+
 ### Dataset generation pipeline
 
 7000 configs at 56×56×160 production grid, sharded across two machines
