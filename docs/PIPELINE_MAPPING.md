@@ -1,6 +1,8 @@
 # CS 153 Pipeline Mapping — Canonical ML Stages × Our Multi-Physics Surrogate Stack
 
-**Companion to `cs153_project_timeline.md`.** Each section maps our concrete work onto the standard ML training pipeline stages so the narrative becomes "this is what a modern ML pipeline looks like for surrogate-based PDE-constrained control" rather than "here is a list of training jobs."
+← Back to [main README](../README.md) · Companion: [Project timeline](PROJECT_TIMELINE.md) (chronological) · [Receipts index](../receipts/README.md)
+
+**Companion to the timeline doc.** Each section maps our concrete work onto the standard ML training pipeline stages so the narrative becomes "this is what a modern ML pipeline looks like for surrogate-based PDE-constrained control" rather than "here is a list of training jobs." Where the timeline is *organized by time*, this doc is *organized by pipeline stage* — same events, different axis.
 
 Standard ML stages (LLM-era convention):
 

@@ -1,6 +1,8 @@
 # CS 153 Project Timeline — Multi-Physics FNO Surrogates for Cylindrical Acoustic Inverse Design
 
-**For Emma's presentation.** Chronological list of every meaningful decision, architecture change, success, failure, and training run from project genesis through current state (2026-06-03).
+← Back to [main README](../README.md) · Companion: [Pipeline mapping](PIPELINE_MAPPING.md) · [Receipts index](../receipts/README.md)
+
+**Chronological log** of every meaningful decision, architecture change, success, failure, and training run from project genesis through current state (2026-06-04). Organized by era; cross-references to specific code paths, commits, and receipts inline.
 
 ---
 

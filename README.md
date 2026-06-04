@@ -3,6 +3,22 @@
 > **CS 153 submission — Project Track: Research (with Application/Product secondary).**
 > Co-authors: Jamie Marwell, Emma Blemaster.
 
+**Navigation:**
+[TL;DR](#tldr-for-graders-in-60-seconds) ·
+[Rubric map](#for-cs-153-graders--rubric-mapping) ·
+[Quick-start](#quick-start-5-commands-to-reproduce-a-sanity-gate) ·
+[Architecture](#architecture) ·
+[Current state](#current-state) ·
+[Phase 7d post-mortem](#phase-7d-post-mortem-from-ceiling-to-pass-via-architecture-scaling) ·
+[Dataset gen](#dataset-generation-pipeline) ·
+[Setup](#setup) ·
+[Running](#running) ·
+[AI use](#ai-use) ·
+[Compute](#compute-disclosure)
+| Companion docs: [Timeline](docs/PROJECT_TIMELINE.md) ·
+[Pipeline mapping](docs/PIPELINE_MAPPING.md) ·
+[Receipts index](receipts/README.md)
+
 Training cross-physics Fourier Neural Operator (FNO) surrogates for the
 40 kHz acoustic forward problem in cylindrical chambers, then using
 their pairwise disagreement as a calibrated uncertainty signal for
