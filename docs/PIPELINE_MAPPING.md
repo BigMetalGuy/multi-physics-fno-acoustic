@@ -101,7 +101,7 @@ TELEMETRY FEEDBACK (future)
 |---|---|---|---|---|---|
 | **FNO_A** (analytical) | Phase 7-analytical L1 | 1.192 (job 205, 50 ep) | ✓ | n/a (analytical has no real focal physics) | Era 5 |
 | **FNO_J** (j-Wave) | Phase 7c L1 | 1.05 (job 240) | ✓ (0.193 — false positive) | **FAIL** (E_focal 0.0487 below uniform) | Era 5; retrained Era 3 → still focal_zone-marginal |
-| **FNO_F** (FEM-coupled) | Phase 6.6b → v1 → v2 → v2.5 → v3 | 1.94 (v3 ep14) | 0.857 (FAIL, at architectural ceiling) | n/a in the random-phase regime | Era 7; mode-scaling to 12×12×36 in Era 9 (job 866 queued) |
+| **FNO_F** (FEM-coupled) | Phase 6.6b → v1 → v2 → v2.5 → v3 (12×12×36 modes) | **1.799** (866 ep25) | **0.281 PASS** | n/a in the random-phase regime | Era 9; mode-scaling broke through; PASS, comparable to FNO_J L1's 0.193 |
 
 ### Training-side lessons (each is its own "compound bug" the team had to debug to PASS)
 
@@ -116,7 +116,7 @@ TELEMETRY FEEDBACK (future)
 | FNO_F representational ceiling on cylindrical FEM is the 8×8×24 truncated Fourier basis — 83% loss before model | Era 8 alternate-hypothesis test | `fno-fourier-truncation-ceiling.md` |
 
 ### Where this stage is in the timeline doc
-- Era 2 (Phase 6 FNO_F iterations), Era 5 (FNO_J/A smoke + real on cluster), Era 7 (v3 hyperparameter sweep), Era 9 (mode-scaling experiment, in flight).
+- Era 2 (Phase 6 FNO_F iterations), Era 5 (FNO_J/A smoke + real on cluster), Era 7 (v3 hyperparameter sweep), Era 9 (mode-scaling experiment, COMPLETED — 866 val_h1=1.799, mean_pred=0.281 PASS).
 
 ---
 
@@ -232,7 +232,7 @@ HARDWARE (running machine)
 | Telemetry classifier (5-band residual) | ✅ deployed |
 | Calibration loop (JAX-autograd through mock FEM) | ✅ deployed |
 | Swap mock FEM → real Phase 5 backend | one-line change, ready |
-| Acoustic sensor pipeline integration | Drip-side hardware, gated on L1 |
+| Acoustic sensor pipeline integration | hardware-side, gated on L1 prototype |
 | Continual retraining of student | Cloud sprint pattern ready (used for v1 student) |
 | MODEL_MANIFEST hot-swap | Already wired; dashboard re-fetches on env-var change |
 
@@ -303,7 +303,7 @@ CS 153 timeline (the 1-month sprint): the project focuses on **Stages 0 → 2** 
 **The story arc for the presentation** is therefore:
 1. Why we need this pipeline (PDE-constrained control needs real-time inverse → surrogates).
 2. The clean canonical mapping (gen → train → combine → distill → deploy → feedback).
-3. Our state at each stage (most complete: gen, train; in progress: train FNO_F; ready: combine; demoed: distill; live: sim deploy; staged: hardware deploy; future: feedback).
+3. Our state at each stage: all three forward surrogates (A, J, F) PASS sanity gates; disagreement matrix recomputed but F-row still ~3× the regime-divergence calibration, so combine is gated on further FNO_F refinement; student v1 already demonstrates the 23,288× distillation speedup; sim deployment live; hardware staged for L1 prototype.
 4. The reusable methodology lessons (data dominates network, representational vs optimization ceilings, sanity-gate scope-of-validity, agent-as-MLOps-operator).
 
 ---

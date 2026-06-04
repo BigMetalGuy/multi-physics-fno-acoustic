@@ -1,5 +1,5 @@
 """
-Drip Physics Core
+Physics Core (package)
 ==================
 
 Shared interface package between the simulations engine (drip_physics) and

@@ -38,7 +38,7 @@ at 0.479 ms inference.**
 | FNO_J (Phase 7a) | 32×32×96 mini-array | mean_pred = **0.094 PASS** | First j-Wave FNO at full PDE-grid scale |
 | FNO_J L1 (Phase 7c) | 44×44×144 L1 cylinder | mean_pred = **0.193 PASS** | Forced new gate after focal-zone false-positive |
 | Student v1 (distilled from FNO_J) | — | — | **23,288× speedup, 0.479 ms inference** |
-| FNO_F (Phase 7d v3 thermal-aware) | 56×56×160 L1 cylinder | val_h1 **1.94** (8×8×24 modes) → **0.98 at ep5** with 12×12×36 modes | Hit and broke Fourier-truncation ceiling |
+| FNO_F (Phase 7d v3 thermal-aware) | 56×56×160 L1 cylinder | val_h1 **1.94** (8×8×24 modes, FAIL mean_pred) → **1.80** (12×12×36 modes, **PASS** mean_pred 0.281) | Third PASSing forward surrogate; deep-eval matches FNO_J L1 competence regime |
 
 **Headline methodology lesson.** When a model "plateaus," distinguish
 *representational ceiling* (architecturally representable) from
@@ -226,8 +226,9 @@ distill a student model for real-time inference.
 | 7c   | FNO_J | 44×44×144 L1 cylinder | 0.193 | **PASS** (later flagged false-positive → 7c v2 retrain) |
 | —    | student v1 (distilled from FNO_J) | — | — | **23,288× speedup, 0.479 ms inference** |
 | 7d v1/v2 | FNO_F (fixed bed_temp) | 56×56×160 L1 cylinder | val_h1 ≈ 4.0 | **FLATLINE** — diagnosed as hidden-conditioning failure |
-| 7d v3 (thermal-aware, 8×8×24 modes) | FNO_F | 56×56×160 L1 cylinder | val_h1 = **1.94** at ep 14 | architectural representational ceiling; ~70% of representable space captured |
-| 7d v3 (12×12×36 modes) smoke | FNO_F | 56×56×160 L1 cylinder | val_h1 = **0.98** at ep 5 (broke predict-zero baseline) | confirmed truncation ceiling; 50ep production in flight |
+| 7d v3 (thermal-aware, 8×8×24 modes) | FNO_F | 56×56×160 L1 cylinder | val_h1 = 1.94 at ep14, mean_pred = 0.83 FAIL | initially read as architectural ceiling; deep-eval found training-dynamics limit |
+| 7d v3 (12×12×36 modes) smoke | FNO_F | 56×56×160 L1 cylinder | val_h1 = 0.98 at ep5 (single-GPU regime) | smoke broke below predict-zero baseline; production fired |
+| **7d v3 (12×12×36 modes) production** | FNO_F | 56×56×160 L1 cylinder | val_h1 = **1.799** at ep25, mean_pred = **0.281** | **PASS** — first thermal-aware FNO_F clearing the sanity gate. Comparable to FNO_J L1's 0.193. |
 
 All PASS receipts (mean_pred.json, disagreement images, training logs)
 live in `receipts/`.
@@ -264,54 +265,84 @@ radians ∈ [0, 2π], not unit-normalized), gradient explosion at LR=1e-3
 crushed the FNO into the zero attractor. LR=1e-4 stays in the descent
 basin: val_h1 1.65 → 1.09 in 5 epochs. 50-ep real fired with LR=1e-4.
 
-### Phase 7d post-mortem: representational ceiling, not training ceiling
+### Phase 7d post-mortem: from "ceiling" to "PASS" via architecture scaling
 
 Three 50-epoch runs (520, 603) plus four hyperparameter smokes (446, 469,
 565, 566) converged on **val_h1 ≈ 1.94** as an apparent floor. The natural
-read was "model is overfitting" or "needs more compute." Both wrong.
+read was "model is overfitting" or "needs more compute" — both incomplete.
 
-A direct test of the architecture's representational capacity revealed the
-actual ceiling: **projecting the target fields onto the FNO's 8×8×24
-truncated Fourier basis recovers only ~17% of the target signal**
-(relative L² = 0.83 between target and truncated-target). That's the
-architectural floor before any model is involved. The trained model's
-relative L² = 0.73 sits at ~70% of that representable maximum.
+A direct test of the architecture's representational capacity gave us a
+first-pass estimate of the ceiling: **projecting the target fields onto
+the FNO's 8×8×24 truncated Fourier basis loses ~83% of the target signal**
+(relative L² = 0.83 between target and truncated-target). The trained
+520 model's relative L² = 0.73 sat near that loose upper bound, which
+*looked* like an architectural ceiling.
 
-Independently, when running the existing `focal_zone_signal_quality` gate
-on 520's best.pt we initially read E_focal = 0.000 as evidence of "wall-
-dominated learning" — the same false-positive failure mode the public
-repo flagged for Phase 7c v1. But sampling 100 random training-set
-*targets* showed median E_focal = 0.003 (vs uniform-distribution baseline
-0.0395). The targets themselves put almost no energy in the focal zone
-because forward FEM with *random* transducer phases produces diffuse
-interference patterns. Focal points only emerge under *focused* (inverse-
-designed) phases. The gate is built for inverse-design outputs, not
-forward-trained surrogates evaluated on random-phase splits. The model
-matching ~0 focal-zone energy on random-phase targets is correct
-behavior, not failure.
+We then ran the 12×12×36-modes experiment (job 866, 50 ep, 4× H100,
+LR=1e-4, same dataset). **Result: val_h1 = 1.799 best, mean_pred ratio
+0.281 — first thermal-aware FNO_F to PASS the sanity gate.** Deep
+side-by-side evaluation vs 520:
 
-**The actually informative next axes:**
+| Metric | 520 (8×8×24) | 866 (12×12×36) | Δ |
+|---|---|---|---|
+| mean_pred ratio (PASS < 0.5) | 0.833 ❌ | **0.281** ✅ | −66% |
+| model rel L² (normalized) | 0.730 | **0.247** | −66% |
+| Pa magnitude ratio pred/target | 0.476 | **0.724** | +52% |
+| normalized std ratio pred/target | 0.84 | **0.95** | +14% |
+| thermal sensitivity (rel diff) | 4.1% | **8.1%** | +97% |
+| truncation ceiling rel L² | 0.826 | 0.735 | −11% |
 
-- **Higher Fourier mode counts.** 12×12×36 (3× more spectral params,
-  ~400M total) is a reasonable first step; 16×16×48 is 8× more
-  (~1B params). Test how much the truncation ceiling moves.
-- **Cylindrical-harmonics basis** instead of Cartesian Fourier. The
-  chamber geometry has azimuthal symmetry the model is currently
-  forced to learn from scratch.
-- **Hybrid FNO + CNN/MLP head** so high-frequency local structure
-  (which the truncated Fourier basis misses) gets a dedicated decoder.
+**Honest correction to the original "truncation ceiling" framing.** The
+truncation test moved by only 11% (0.826 → 0.735) while the actual model
+loss moved 66% (0.730 → 0.247). That math tells us the truncation
+projection was a **loose upper bound** on FNO capacity, not a tight one:
+real FNOs have hidden_channels, real-space convolutions, the conditioning
+MLP, and prior pathways that let them transcend the strict truncated-mode
+subspace. 520 wasn't actually at its architectural ceiling — it was at a
+*training-dynamics* limit (cosine-LR + DDP overfit) that the bigger model
+happened to escape. **The methodological lesson still holds**: distinguish
+representational from optimization ceiling before scaling compute. The
+quantitative estimate via truncation projection is just looser than we
+first claimed.
 
-Higher hidden_channels would add optimization capacity without addressing
-the truncation ceiling, so it's not the lever. Same with more training
-data — the model is already capturing 70% of the representable space.
+**The 866 result also independently invalidated the focal-zone false-
+positive concern.** Sampling 100 random training-set *targets* showed
+median E_focal = 0.003 (vs uniform-baseline 0.0395). Targets themselves
+put almost no energy in the focal zone because forward FEM with *random*
+transducer phases produces diffuse interference; focal points emerge only
+under *focused* (inverse-designed) phases. The `focal_zone_signal_quality`
+gate is built for inverse-design outputs, not forward-trained surrogates
+on random-phase splits. The model matching ~0 focal-zone energy on
+random-phase targets is correct behavior, not failure.
+
+**Disagreement matrix recompute with the new FNO_F:**
+
+```
+                  520 F (val=1.94, FAIL)        866 F (val=1.80, PASS)         
+                                                                       
+          A         J         F          A         J         F
+     A  0.000     1.296     4.405      0.000     1.296     3.768
+     J  1.296     0.000     5.270      1.296     0.000     4.495
+     F  4.405     5.270     0.000      3.768     4.495     0.000
+```
+
+A↔J unchanged (1.296 → 1.296) — sanity ✓. F's row dropped ~14% in both
+columns. F still ~3× the project's regime-divergence calibration (A↔J at
+1.30), so **FNO_combined adversarial training is not yet justified** —
+the F-side disagreement is still dominated by representational deficit
+rather than complementary-physics signal. Mode-scaling moved us in the
+right direction; another 1–2 iterations of architecture or training
+refinement are needed before the disagreement matrix is interpretable as
+"complementary physics."
 
 **Methodological lesson:** when val plateaus, distinguish *optimization
-ceiling* from *representational ceiling* before scaling compute. The
-representational ceiling is measurable in minutes by projecting targets
-through the model's mode budget; the optimization ceiling is what
-hyperparameter sweeps actually address. We spent ~80 GPU-hours sweeping
-LR (520 → 565 → 603) before measuring the representational ceiling
-that explained everything.
+ceiling* from *representational ceiling* before scaling compute, AND
+verify the representational ceiling estimate is tight by running a
+single bigger-architecture comparison (cheap: one production run was
+enough to invalidate our loose-bound estimate). We spent ~80 GPU-hr
+sweeping LR (520 → 565 → 603) on 8×8×24 modes before testing 12×12×36;
+the bigger-mode experiment cost ~40 GPU-hr and produced the PASS that
+LR-sweeping never could have.
 
 ### Dataset generation pipeline
 
@@ -530,15 +561,14 @@ External infrastructure:
   intermediary after `kubectl cp` and `kubectl exec ... cat` were
   observed to silently truncate multi-GB files.
 - **Railway**: production deployment of the dashboard / inference server
-  (separate Drip-internal repo).
+  (in a separate internal repo).
 
 Earlier cloud spend (Lambda Labs, before the Stanford allocation came
 online): ~$80 across the Phase 6.x FNO_F iteration arc.
 
 DigitalOcean & Cloudflare CS 153 credits: not used for this project. The
 Stanford H100 allocation covered all training compute; R2 was on an
-existing Drip-internal account so the CS 153 Cloudflare credits weren't
-needed.
+existing personal account so the CS 153 Cloudflare credits weren't needed.
 
 ## License
 

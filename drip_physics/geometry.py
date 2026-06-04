@@ -2,14 +2,14 @@
 Transducer array geometry generators.
 
 This module provides functions to create common transducer array
-configurations for Drip and acoustic levitation experiments.
+configurations for acoustic levitation experiments.
 
 Coordinate system:
     - X, Y: horizontal plane
     - Z: vertical (up is positive)
     - Origin: center of array
 
-Standard Drip configurations:
+Standard configurations:
     - L1 Demo: 10 rings × 12 transducers = 120 total, R=5cm, H=40cm
     - Full system: 390 transducers (details TBD)
 """
@@ -46,7 +46,7 @@ def create_cylindrical_array(
         - If per_ring=1, single transducer per ring (line array)
 
     Example:
-        # Standard Drip L1 array
+        # Standard L1 array
         positions = create_cylindrical_array(
             radius=0.05, height=0.4, rings=10, per_ring=12)
         # Returns 120 positions

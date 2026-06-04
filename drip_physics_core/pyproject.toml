@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "drip-physics-core"
 version = "0.1.0"
-description = "Shared canonical types and parametric design module for Drip 3D simulations + design-tool"
+description = "Shared canonical types and parametric design module for multi-physics simulations and design tool"
 requires-python = ">=3.11"
 dependencies = [
     "numpy>=2.2,<3.0",

@@ -1,5 +1,5 @@
 """
-Controller types and implementations for Drip droplet guidance.
+Controller types and implementations for droplet guidance.
 
 This module contains:
 - ControllerState: shared input dataclass for all controller modes

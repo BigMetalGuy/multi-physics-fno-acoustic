@@ -385,7 +385,7 @@ Memory: `fno-fourier-truncation-ceiling.md`.
 
 ---
 
-## ERA 9 — Mode-Scaling Experiment (2026-06-03 — in flight)
+## ERA 9 — Mode-Scaling Experiment (2026-06-03 → 06-04 — COMPLETED)
 
 ### Sbatch knob added
 - `N_MODES_X`/`Y`/`Z` and `HIDDEN` made env-overridable in `phase7c_train_omniva.sbatch`.
@@ -404,13 +404,64 @@ Memory: `fno-fourier-truncation-ceiling.md`.
 | 5 | 1.09 | **0.98** | −0.11 |
 
 - **val_h1 broke below the 1.0 predict-zero baseline for the first time across any v3 run.**
-- Test_all_h1 at ep5 = 0.952.
-- Fourier-truncation hypothesis **CONFIRMED**.
+- Test_all_h1 at ep5 = 0.952. Smoke hypothesis confirmed; fired production.
 
-### Job 866 — 12×12×36 modes 50ep production (CURRENTLY QUEUED)
+### Job 866 — 12×12×36 modes 50ep production (COMPLETED)
 - 4× H100 DDP, BATCH=2, LR=1e-4, --thermal-aware.
-- ~36 GPU-hr expected, ~9h wall.
-- Hypothesis: lands val_h1 ~0.5–0.7 based on smoke 800's slope.
+- Wall 10:08:01 (~40 GPU-hr actual).
+- **Best: val_h1 = 1.799 at ep25 (test_all_h1 = 1.754).** Final ep50 = 1.826.
+- Curves descended cleanly from 4.0 → 1.94 by ep14 (same as 520's
+  former best), then continued past the prior ceiling to ~1.80 as the
+  cosine LR schedule decayed below the overfit regime.
+
+### Job 866 deep evaluation vs 520 baseline
+
+| Metric | 520 (8×8×24) | 866 (12×12×36) | Δ |
+|---|---|---|---|
+| best val_h1 | 1.940 | **1.799** | −7.3% |
+| best test_all_h1 | 1.903 | **1.754** | −7.8% |
+| mean_pred ratio (PASS < 0.5) | 0.833 ❌ FAIL | **0.281** ✅ **PASS** | −66% |
+| model rel L² (normalized) | 0.730 | **0.247** | −66% |
+| Pa magnitude ratio pred/target | 0.476 | **0.724** | +52% |
+| normalized std ratio pred/target | 0.84 | **0.95** | +14% |
+| thermal sensitivity (rel diff) | 4.1% | **8.1%** | +97% |
+| truncation ceiling rel L² | 0.826 | 0.735 | −11% |
+
+**Headline: 866 PASSED mean_pred (0.281 vs 520's 0.833) — first
+thermal-aware FNO_F to clear the sanity gate.** Comparable to
+FNO_J L1's 0.193 production result.
+
+### Disagreement matrix recompute with 866 F
+
+```
+                  520 F (val=1.94, FAIL)         866 F (val=1.80, PASS)
+          A         J         F          A         J         F
+     A  0.000     1.296     4.405      0.000     1.296     3.768
+     J  1.296     0.000     5.270      1.296     0.000     4.495
+     F  4.405     5.270     0.000      3.768     4.495     0.000
+```
+
+- A↔J unchanged (1.296 → 1.296) — sanity ✓ (A and J weren't retrained).
+- F's row: A↔F dropped 4.40 → 3.77 (−14%); J↔F dropped 5.27 → 4.50 (−14%).
+- F's Pa magnitude recovered 7.6 → 11.6 Pa (target ~16) — physical
+  improvement confirmed.
+- **F still ~3× the regime-divergence calibration of A↔J = 1.30** (the
+  project's prior-calibrated "complementary physics" signal level).
+  FNO_combined adversarial training would still be dominated by F's
+  representational deficit rather than complementary-physics signal —
+  not yet justified.
+
+### Honest narrative correction recorded
+
+The original "Fourier truncation is the architectural ceiling" framing
+turned out to be a *loose upper bound*, not a tight one. The truncation
+test moved 11% (0.826 → 0.735) while the actual model loss moved 66%
+(0.730 → 0.247). FNOs have hidden_channels, real-space convolutions, and
+prior pathways beyond the strict truncated-mode subspace; the truncation
+projection underestimates real capacity. The lesson — *distinguish
+representational from optimization ceiling before scaling compute* —
+still holds, but the quantitative ceiling estimate via truncation
+projection requires a bigger-architecture comparison to validate.
 
 ---
 
@@ -422,8 +473,9 @@ Memory: `fno-fourier-truncation-ceiling.md`.
 | Phase 7a FNO_J (32×32×96) | **0.094** | 1.18 | PASS |
 | Phase 7c FNO_J L1 (44×44×144) | 0.193 | 1.21 | PASS (mean_pred) but FAIL focal_zone — false positive |
 | **Phase 7d v1/v2 FNO_F fixed bed_temp** | — | **4.0 flatline** | FAIL — diagnosed as hidden-conditioning failure |
-| **Phase 7d v3 thermal-aware (8×8×24)** | 0.857 | **1.940 at ep14** | Architectural ceiling — not "broken," at representational max |
-| **Phase 7d v3 thermal-aware (12×12×36) smoke** | — | **0.98 at ep5** | First v3 to break predict-zero baseline; 50ep production in flight |
+| **Phase 7d v3 thermal-aware (8×8×24)** | 0.833 | 1.940 at ep14 | FAIL — initially read as architectural ceiling; was training-dynamics limit |
+| **Phase 7d v3 thermal-aware (12×12×36) smoke** | — | 0.98 at ep5 | Single-GPU smoke broke below predict-zero baseline |
+| **Phase 7d v3 thermal-aware (12×12×36) production (866)** | **0.281 PASS** | **1.799 at ep25** | First thermal-aware FNO_F to clear sanity gate; comparable to FNO_J L1 |
 | Student v1 distilled from FNO_J | — | — | **23,288× speedup, 0.479 ms inference** |
 
 ---

@@ -20,8 +20,8 @@ set -euo pipefail
 # ---------- config ----------------------------------------------------------
 INSTANCE_TYPE="${LAMBDA_INSTANCE_TYPE:-gpu_1x_a100_sxm4}"
 REGION="${LAMBDA_REGION:-us-east-1}"
-SSH_KEY_NAME="${LAMBDA_SSH_KEY_NAME:-drip-ml-sprint-1}"
-SSH_KEY_PATH="${LAMBDA_SSH_KEY_PATH:-$HOME/.ssh/lambda_drip_sprint}"
+SSH_KEY_NAME="${LAMBDA_SSH_KEY_NAME:-fno-cloud-sprint-1}"
+SSH_KEY_PATH="${LAMBDA_SSH_KEY_PATH:-$HOME/.ssh/lambda_fno_sprint}"
 POLL_INTERVAL_S="${LAMBDA_POLL_INTERVAL_S:-15}"
 POLL_TIMEOUT_S="${LAMBDA_POLL_TIMEOUT_S:-900}"   # 15 min hard cap on becoming active
 API_BASE="https://cloud.lambdalabs.com/api/v1"
@@ -93,7 +93,7 @@ mkdir -p "$(dirname "${SSH_KEY_PATH}")"
 chmod 700 "$(dirname "${SSH_KEY_PATH}")"
 if [[ ! -f "${SSH_KEY_PATH}" ]]; then
     echo "  generating new key at ${SSH_KEY_PATH}"
-    ssh-keygen -t ed25519 -f "${SSH_KEY_PATH}" -N "" -C "drip-ml-sprint" >/dev/null
+    ssh-keygen -t ed25519 -f "${SSH_KEY_PATH}" -N "" -C "fno-cloud-sprint" >/dev/null
 else
     echo "  reusing existing key at ${SSH_KEY_PATH}"
 fi
@@ -132,7 +132,7 @@ LAUNCH_BODY=$(jq -n \
         instance_type_name: $type,
         ssh_key_names: [$key],
         quantity: 1,
-        name: "drip-ml-distill"
+        name: "fno-distill"
     }')
 
 LAUNCH_RESP=$(api_post "/instance-operations/launch" "${LAUNCH_BODY}" \
@@ -145,7 +145,7 @@ fi
 echo "  launched: instance_id=${INSTANCE_ID}"
 
 # Persist instance_id so teardown can find it without an extra arg.
-INSTANCE_FILE="${LAMBDA_INSTANCE_FILE:-${HOME}/.lambda_drip_instance_id}"
+INSTANCE_FILE="${LAMBDA_INSTANCE_FILE:-${HOME}/.lambda_fno_instance_id}"
 echo "${INSTANCE_ID}" > "${INSTANCE_FILE}"
 echo "  wrote ${INSTANCE_FILE}"
 

@@ -648,7 +648,7 @@ def main() -> None:
         "timestamp": datetime.now().isoformat(),
         "caveat": (
             "AM-Bench AMB2022-01 is laser-driven IN718 single-track; "
-            "Drip is acoustic-driven Al droplet deposition.  This validates "
+            "This stack is acoustic-driven Al droplet deposition.  This validates "
             "ONLY the FEM heat-conduction kernel (universal heat equation).  "
             "DOI reference: AMB2022-01 = 10.18434/mds2-2715."
         ),

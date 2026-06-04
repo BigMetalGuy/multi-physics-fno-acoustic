@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Trajectory simulation for Drip droplet guidance.
+Trajectory simulation for droplet guidance.
 
 This module integrates the actual physics:
 1. Gravity pulls droplet down

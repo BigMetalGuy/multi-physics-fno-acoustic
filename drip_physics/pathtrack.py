@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Path tracking simulation for Drip droplet guidance.
+Path tracking simulation for droplet guidance.
 
 This module contains the simulation functions that drive droplets through
 the acoustic control chamber:

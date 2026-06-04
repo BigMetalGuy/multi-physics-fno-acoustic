@@ -1,5 +1,5 @@
 """
-Core data types for Drip physics engine.
+Core data types for the physics engine.
 
 This module defines the fundamental data structures used throughout
 the physics simulation. All types are designed to be:
@@ -115,7 +115,7 @@ class ArrayGeometry:
     Stores the positions of all transducers in the array. Positions are
     in meters, in a right-handed coordinate system where Z is up (vertical).
 
-    For Drip's cylindrical array:
+    For the cylindrical array:
     - Transducers arranged in horizontal rings
     - Each ring at a different Z height
     - Transducers point inward toward the central axis
@@ -160,8 +160,8 @@ class ArrayGeometry:
         """
         Create a cylindrical transducer array.
 
-        Standard Drip L1 configuration: 10 rings × 12 transducers = 120 total
-        Full Drip configuration: 390 transducers
+        Standard L1 configuration: 10 rings × 12 transducers = 120 total
+        Full L1 configuration: 390 transducers
 
         Args:
             radius: Cylinder radius in meters (default 5 cm)

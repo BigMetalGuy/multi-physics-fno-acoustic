@@ -1,5 +1,5 @@
 """
-Config system for Drip physics engine (SW-16, Section 1).
+Config system for the physics engine (SW-16, Section 1).
 
 Single source of truth for all physical constants and derived quantities.
 No physical constant is set directly anywhere else in the codebase —
@@ -267,7 +267,7 @@ ALUMINUM_SOLID = MaterialConfig(
 # Verify: c = 6420 m/s  ✓
 
 
-# --- Al-Mg alloy profiles (from drip-3d.com portal alloy_standards.json) ------
+# --- Al-Mg alloy profiles (from internal alloy_standards.json reference) ------
 #
 # Al-Mg phase diagram (well-established binary):
 #   Solidus: T_s(wt%Mg) ≈ 933 - 19.1 × Mg_wt% [K] (calibrated to portal 5083)
@@ -289,7 +289,7 @@ def aluminum_viscosity(temperature_K: float) -> float:
         η(933 K) = 1.30 mPa·s  (at melting point)
         η(1123 K) = 0.90 mPa·s (at 850°C superheat)
 
-    Note: drip-3d.com portal (physics.py) has a viscosity model
+    Note: the internal portal (physics.py) has a viscosity model
     (0.85e-3 × exp(3000/T)) but it gives ~21 mPa·s at 660°C — a 16×
     error vs literature. This function uses corrected Arrhenius parameters.
 
@@ -323,14 +323,14 @@ def make_al_mg_alloy(
     Returns:
         MaterialConfig for the alloy in liquid state.
 
-    Source: drip-3d.com alloy_standards.json (5052, 5083, 5086 data),
+    Source: internal alloy_standards.json (5052, 5083, 5086 data),
             ASM Binary Phase Diagrams for Al-Mg.
     """
     mg = mg_weight_percent
     if not (0.0 <= mg <= 10.0):
         raise ValueError(f"Mg content must be 0-10 wt%, got {mg}")
 
-    # --- Phase diagram (ASM binary + drip-3d.com portal validation) ---
+    # --- Phase diagram (ASM binary + portal validation) ---
     T_solidus_K = 933.15 - 19.1 * mg    # K
     T_liquidus_K = 933.15 - 6.7 * mg    # K
 

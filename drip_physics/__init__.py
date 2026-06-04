@@ -1,5 +1,5 @@
 """
-Drip Physics — minimal subset for the multi-physics FNO surrogate pipeline.
+Physics — minimal subset for the multi-physics FNO surrogate pipeline.
 
 This is a slim cut of the broader drip_physics engine, containing only the
 modules used by the ml_inverse training/inversion/distillation pipeline and
