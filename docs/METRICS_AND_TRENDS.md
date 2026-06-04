@@ -189,4 +189,45 @@ To convert the current empirical observations into things we'd defend with confi
 4. **Inverse-design loop evaluation.** Run the autodiff-through-FNO_F inverse loop on 10 target trajectories, check the resulting fields. Whether the surrogate is good enough for inverse design is unknown until this is done.
 5. **Output-rescaling head.** Train a small calibration head on the systematic magnitude bias. If it closes the bias without breaking structure, our predicted Pa magnitudes become deployment-grade.
 
+### The principled scaling experiment for the disagreement framework
+
+Smokes 974 (more modes), 975 (more hidden channels), and 981 (both)
+suggest that FNO_F has measurable headroom for parameter scaling beyond
+866. The 981 smoke at ep2 already sits at val_h1 = 0.93 — below where
+974 and 975 land at ep5 — indicating the two axes may compound rather
+than saturate at the same ceiling. **But the implication for the
+disagreement framework specifically is bigger than just "make F better."**
+
+The disagreement matrix's F-row sits at ~3× the A↔J regime-divergence
+calibration not because F's physics is wrong but because F has more
+representational deficit than A and J do (F is at 56×56×160 grid with
+12×12×36 modes serving a multi-physics target; A and J are at 44×44×144
+with 8×8×24 modes serving simpler-physics targets). If we improve F
+alone while leaving A and J at their current sizes, F's row in the matrix
+will drop — but the comparison is still between surrogates of very
+different capacities. The disagreement signal remains contaminated by
+"F vs an under-parameterized A" rather than "F vs A interpretable as
+physics divergence."
+
+**The principled scaling path** for actually demonstrating the
+disagreement framework as designed:
+- FNO_F retrained at 16×16×48 + HIDDEN=192 on v3 data (the 981
+  architecture)
+- FNO_J L1 retrained at matching capacity (currently 8×8×24 + HIDDEN=128,
+  ~118M params; needs to scale to ~264M+ params)
+- FNO_A retrained similarly
+
+Then the disagreement matrix is comparing surrogates of comparable
+representational capacity. F's row reduction would then be more
+defensibly attributable to physics signal vs noise.
+
+**Cost estimate for the scaling experiment.** ~60-80 GPU-hr per
+production run × 3 surrogates = ~200-250 GPU-hr total. This is the
+remainder of the Stanford CS 153 allocation. **A full execution of
+the principled scaling experiment is approximately the same compute
+as everything else we ran this term.** It is the natural follow-on for
+Drip's longer-term work but out of scope for the submission window.
+
+---
+
 If any of these come back negative, the surrogate is less ready than the current docs suggest. If they come back positive, we have strong evidence to fire FNO_combined and the student-v2 distillation. **Either outcome is more useful than continuing to polish the current docs.**
