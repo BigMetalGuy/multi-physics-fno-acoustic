@@ -17,6 +17,7 @@
 [Compute](#compute-disclosure)
 | Companion docs: [Timeline](docs/PROJECT_TIMELINE.md) ·
 [Pipeline mapping](docs/PIPELINE_MAPPING.md) ·
+[Metrics & trends — what the training tells us](docs/METRICS_AND_TRENDS.md) ·
 [Receipts index](receipts/README.md)
 
 **What we built in one sentence.** Three neural-operator surrogates that
