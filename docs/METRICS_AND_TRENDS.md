@@ -132,11 +132,30 @@ In both cases the smoke landed substantially *below* what the production run ach
 
 These are patterns observed across the run set. They are observations, not conclusions.
 
-### 3.1 The single change that produced the FNO_F PASS
+### 3.1 The single change that produced the FNO_F PASS — and what follow-on smokes added
 
 We ran ~9 training jobs in the v3 thermal-aware arc varying loss (default H¹ vs per-sample H¹), LR (1e-3, 1e-4, 5e-5), and batch (BATCH=1 single-GPU vs BATCH=2 DDP-gpu=4). None of these alone produced a mean_pred PASS. The transition from FAIL to PASS coincided with the mode-count change (8×8×24 → 12×12×36 in commit `33b62b9`).
 
-We do not know whether the architectural change is the *cause* or whether it co-occurred with a more favorable optimization trajectory enabled by the larger parameter count. Distinguishing those would require running 866-modes-but-smaller-hidden or 866-modes-but-shorter-training comparisons we didn't run.
+We did not run a controlled ablation isolating "more modes" from "more parameters" (mode count change took the model from 118M to 264M params, ~2.2× — both axes changed simultaneously).
+
+**Post-866 single-axis smokes (jobs 974, 975).** After the PASS, we ran two 5-epoch smokes each varying one axis:
+
+| | Modes | Hidden | ep5 val_h1 | vs 866 smoke (0.98) |
+|---|---|---|---|---|
+| 866 smoke baseline | 12×12×36 | 128 | 0.98 | — |
+| 974 (more modes) | **16×16×48** | 128 | 0.914 | −6.7% |
+| 975 (more hidden) | 12×12×36 | **192** | 0.911 | −7.0% |
+
+**What we measured:** both axes improved over 866's smoke baseline at ep5 by ~7%. 974 vs 975 differed by 0.003 — below the bootstrap CI width we measured at full eval (~0.005), so we cannot distinguish them at this scale.
+
+**What we don't know:**
+- Which axis is the better scaling lever. The smokes don't tell us; same seed, same depth, indistinguishable result.
+- Whether the smoke-vs-production gap (smokes landed ~0.85 below production in the two pairings we measured: 469→520 and 800→866) is the same magnitude for these bigger models, or whether the bigger models would close the smoke-vs-production gap differently.
+- Whether the DDP cosine-LR overfit at production scale would apply equally to both larger variants.
+
+A combined-axes smoke (job 981: 16×16×48 modes AND HIDDEN=192) was fired to test whether the two axes compound or saturate at the same ~0.91 ceiling. Result not yet captured in this writing of the doc.
+
+**Decision on 50-ep production for either variant.** Not fired before submission. The smokes themselves are the data; a single 50-ep production wouldn't distinguish which axis matters more without controlled multi-seed comparison.
 
 ### 3.2 Forward training on random phases doesn't probe focal-zone behavior
 

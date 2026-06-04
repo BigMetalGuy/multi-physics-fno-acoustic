@@ -467,7 +467,59 @@ projection requires a bigger-architecture comparison to validate.
 
 ---
 
-## Headline numbers as of 2026-06-03
+## ERA 10 — Post-866 axis-exploration smokes (2026-06-04)
+
+After 866 demonstrated the FAIL → PASS transition with the
+8×8×24 → 12×12×36 mode change, we ran two single-axis smokes to test
+which axis (mode count vs hidden channels) is the binding lever.
+
+### Jobs 974, 975, 981 — single-axis variations + combined-axes test
+
+All three are 5-epoch smokes, gpu=1, BATCH=1, LR=1e-4, --thermal-aware,
+same v3 dataset.
+
+| Job | Modes | Hidden | ep5 val_h1 | ep5 test_all_h1 | Checkpoint size |
+|---|---|---|---|---|---|
+| 866 (baseline smoke 800 ref) | 12×12×36 | 128 | 0.98 | 0.952 | 4.79 GB |
+| 974 | **16×16×48** | 128 | **0.914** | 0.883 | 10.5 GB |
+| 975 | 12×12×36 | **192** | **0.911** | 0.880 | 10.2 GB |
+| 981 (combined) | **16×16×48** | **192** | running | — | — |
+
+### What we measured
+
+- Both 974 (more modes) and 975 (more hidden channels) improved on the
+  866 smoke baseline by ~7% at ep5.
+- 974 vs 975 at ep5: 0.914 vs 0.911 — 0.003 difference. Below the
+  bootstrap CI widths we measured for 866's full eval (~0.005), so we
+  can't distinguish them as separate winners.
+- Checkpoint sizes ~2.2× the 866 baseline in both cases.
+
+### What we don't know
+
+- Which axis (modes vs hidden) is the better lever to scale further.
+  Single seed, smoke scale only; the difference is below measurement
+  noise.
+- Whether the smoke-vs-production gap (smokes landed ~0.85 better than
+  production in both 469→520 and 800→866 pairings) is the same
+  magnitude for these bigger models or different.
+- Whether the DDP cosine-LR overfit pattern that showed up at production
+  scale in 520 and 866 (val rising mid-training before recovering) would
+  appear in 974/975/981 production runs.
+- Whether axes compound — that's what job 981 is testing. As of this
+  writing, 981 is queued/running.
+
+### Decision after the smokes landed
+
+We did not fire a 50-epoch production run of either 974 or 975. The
+information value of one 50-ep production at this point relative to the
+GPU-hr cost (each ~15–20 GPU-hr based on smoke wall-time scaling) was
+judged not worth it inside the submission window. The smokes themselves
+are the data; a single 50-ep production wouldn't distinguish which axis
+matters more without a controlled multi-seed comparison.
+
+---
+
+## Headline numbers as of 2026-06-04
 
 | Phase / Model | mean_pred ratio | val_h1 | Verdict |
 |---|---|---|---|
@@ -477,8 +529,10 @@ projection requires a bigger-architecture comparison to validate.
 | **Phase 7d v1/v2 FNO_F fixed bed_temp** | — | **4.0 flatline** | FAIL — diagnosed as hidden-conditioning failure |
 | **Phase 7d v3 thermal-aware (8×8×24)** | 0.833 | 1.940 at ep14 | FAIL — initially read as architectural ceiling; was training-dynamics limit |
 | **Phase 7d v3 thermal-aware (12×12×36) smoke** | — | 0.98 at ep5 | Single-GPU smoke broke below predict-zero baseline |
-| **Phase 7d v3 thermal-aware (12×12×36) production (866)** | **0.281 PASS** | **1.799 at ep25** | First thermal-aware FNO_F to clear sanity gate; comparable to FNO_J L1 |
-| Student v1 distilled from FNO_J | — | — | **23,288× speedup, 0.479 ms inference** |
+| **Phase 7d v3 thermal-aware (12×12×36) production (866)** | **0.240 PASS** (N=32 CI [0.238, 0.241]) | **1.799 at ep25** | mode-change coincided with FAIL→PASS; controlled ablation (modes vs param count) not yet done |
+| Phase 7d v3 axis smokes (974, 975) | — | both ~0.91 at ep5 | More-modes and more-hidden-channels each improve over 866 baseline by ~7%; tied at smoke scale (within bootstrap noise) |
+| Phase 7d v3 axis-combined smoke (981) | — | running | tests whether axes compound or saturate |
+| Student v1 distilled from FNO_J | — | 0.479 ms inference (CPU, batch=1; reference hardware not specified in this submission's artifacts) | Distillation referenced for latency only — quality not validated in this submission |
 
 ---
 
