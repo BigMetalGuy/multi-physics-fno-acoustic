@@ -564,7 +564,8 @@ External infrastructure:
   (in a separate internal repo).
 
 Earlier cloud spend (Lambda Labs, before the Stanford allocation came
-online): ~$80 across the Phase 6.x FNO_F iteration arc.
+online): **~$80 of personal funds**, across the Phase 6.x FNO_F iteration
+arc. Not class- or company-reimbursed.
 
 DigitalOcean & Cloudflare CS 153 credits: not used for this project. The
 Stanford H100 allocation covered all training compute; R2 was on an
