@@ -531,7 +531,8 @@ matters more without a controlled multi-seed comparison.
 | **Phase 7d v3 thermal-aware (12×12×36) smoke** | — | 0.98 at ep5 | Single-GPU smoke broke below predict-zero baseline |
 | **Phase 7d v3 thermal-aware (12×12×36) production (866)** | **0.240 PASS** (N=32 CI [0.238, 0.241]) | **1.799 at ep25** | mode-change coincided with FAIL→PASS; controlled ablation (modes vs param count) not yet done |
 | Phase 7d v3 axis smokes (974, 975) | — | both ~0.91 at ep5 | More-modes and more-hidden-channels each improve over 866 baseline by ~7%; tied at smoke scale (within bootstrap noise) |
-| Phase 7d v3 axis-combined smoke (981) | — | running | tests whether axes compound or saturate |
+| Phase 7d v3 axis-combined smoke (981) | — | 0.876 at ep5 | Axes compound; combined-axes meaningfully below either single-axis variant (11% below 866 baseline, 4% below 974/975) |
+| Phase 7d v3 push-modes-further smoke (988) | — | in flight | Tests whether mode scaling has room past 16; 20×20×60 + HIDDEN=192 |
 | Student v1 distilled from FNO_J | — | 0.479 ms inference (CPU, batch=1; reference hardware not specified in this submission's artifacts) | Distillation referenced for latency only — quality not validated in this submission |
 
 ---

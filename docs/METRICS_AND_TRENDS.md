@@ -138,24 +138,28 @@ We ran ~9 training jobs in the v3 thermal-aware arc varying loss (default H¹ vs
 
 We did not run a controlled ablation isolating "more modes" from "more parameters" (mode count change took the model from 118M to 264M params, ~2.2× — both axes changed simultaneously).
 
-**Post-866 single-axis smokes (jobs 974, 975).** After the PASS, we ran two 5-epoch smokes each varying one axis:
+**Post-866 axis-variation smokes (jobs 974, 975, 981, 988).** After the PASS, we ran four 5-epoch smokes varying mode count, hidden channels, and combinations:
 
-| | Modes | Hidden | ep5 val_h1 | vs 866 smoke (0.98) |
-|---|---|---|---|---|
-| 866 smoke baseline | 12×12×36 | 128 | 0.98 | — |
-| 974 (more modes) | **16×16×48** | 128 | 0.914 | −6.7% |
-| 975 (more hidden) | 12×12×36 | **192** | 0.911 | −7.0% |
+| | Modes | Hidden | ep5 val_h1 | ep5 test_all_h1 | vs 866 smoke (0.98) |
+|---|---|---|---|---|---|
+| 866 smoke baseline | 12×12×36 | 128 | 0.98 | 0.952 | — |
+| 974 (more modes) | **16×16×48** | 128 | 0.914 | 0.883 | −6.7% |
+| 975 (more hidden) | 12×12×36 | **192** | 0.911 | 0.880 | −7.0% |
+| **981 (both)** | **16×16×48** | **192** | **0.876** | **0.843** | **−10.6%** |
+| 988 (push modes further) | **20×20×60** | 192 | in flight at submission | — | — |
 
-**What we measured:** both axes improved over 866's smoke baseline at ep5 by ~7%. 974 vs 975 differed by 0.003 — below the bootstrap CI width we measured at full eval (~0.005), so we cannot distinguish them at this scale.
+**What we measured:**
+- Single-axis smokes (974, 975) improved over 866 baseline by ~7% at ep5; they tied within bootstrap noise (difference 0.003).
+- Combined-axes smoke (981) improved over 866 baseline by ~11% — measurably below either single-axis variant. **The axes compound at smoke scale.**
+- 988 (modes pushed from 16×16×48 to 20×20×60) was fired to test whether mode scaling has more room past 16; was in flight at submission.
 
 **What we don't know:**
-- Which axis is the better scaling lever. The smokes don't tell us; same seed, same depth, indistinguishable result.
-- Whether the smoke-vs-production gap (smokes landed ~0.85 below production in the two pairings we measured: 469→520 and 800→866) is the same magnitude for these bigger models, or whether the bigger models would close the smoke-vs-production gap differently.
-- Whether the DDP cosine-LR overfit at production scale would apply equally to both larger variants.
+- Whether the compound effect at smoke scale translates to production. Smoke-to-production gap in earlier pairings (469→520 and 800→866) was roughly +0.85 in val_h1; if the same gap applies, 981 production would land around 1.7 — better than 866's 1.80 but not transformatively. We haven't run 981 production.
+- Whether mode scaling has further room (988 still running at submission).
+- Whether the DDP cosine-LR overfit pattern that showed up in 866 production would behave differently for the larger architectures.
+- Same single-seed limitation as everywhere else.
 
-A combined-axes smoke (job 981: 16×16×48 modes AND HIDDEN=192) was fired to test whether the two axes compound or saturate at the same ~0.91 ceiling. Result not yet captured in this writing of the doc.
-
-**Decision on 50-ep production for either variant.** Not fired before submission. The smokes themselves are the data; a single 50-ep production wouldn't distinguish which axis matters more without controlled multi-seed comparison.
+**Decision on 50-ep production runs.** Not fired before submission. ~60-80 GPU-hr per production at this model scale, ~8-10h wall. Information value vs the submission narrative: limited. Information value for Drip's longer-term planning: useful but bounded by single-seed + no controlled ablation. See § "The principled scaling experiment" below for the experiment that would actually settle the disagreement-matrix question.
 
 ### 3.2 Forward training on random phases doesn't probe focal-zone behavior
 
