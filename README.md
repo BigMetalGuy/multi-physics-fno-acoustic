@@ -19,16 +19,23 @@
 [Pipeline mapping](docs/PIPELINE_MAPPING.md) ·
 [Receipts index](receipts/README.md)
 
-Training cross-physics Fourier Neural Operator (FNO) surrogates for the
-40 kHz acoustic forward problem in cylindrical chambers, then using
-their pairwise disagreement as a calibrated uncertainty signal for
-inverse design and distillation.
+**What we built in one sentence.** Three neural-operator surrogates that
+predict 3D acoustic pressure fields inside a phased-array cylinder
+**~10,000× faster than the underlying physics simulator** (~17 s FEM
+solve → ~1 ms neural inference), with a calibrated pairwise-disagreement
+framework so the three tracks can be combined and distilled into a
+real-time controller for applications like contactless droplet
+manipulation, HIFU thermal focusing, and acoustic tweezer trapping.
 
 The cylindrical regime with hard reflective walls and anisotropic grids
 is under-explored relative to the cubic free-field domains where most
-FNO acoustic literature lives. Applications include droplet manipulation
-for additive manufacturing, HIFU thermal focusing, acoustic tweezer
-trapping in microfluidic cylinders, and ultrasonic NDT.
+FNO acoustic literature lives.
+
+<p align="center">
+  <img src="receipts/_disagreement_F_vs_J_focal/compare_slice_idx00318.png" alt="Side-by-side FNO_F and FNO_J L1 mid-z slice predictions, denormalized to physical Pa" width="600">
+  <br>
+  <em>Side-by-side mid-z slice: FNO_F (left) and FNO_J L1 (right) predicted pressure fields for the same phase configuration, denormalized to Pa. The pairwise residual between trained surrogates calibrates the disagreement framework — and visualizes a case where one surrogate (FNO_J L1) was undertrained at the chamber interior, which the receipts caught before the model could mislead downstream inverse design.</em>
+</p>
 
 ---
 
@@ -42,18 +49,22 @@ Neither is fast enough for real-time control.
 
 **Approach.** Train three FNO surrogates (one per physics fidelity:
 analytical, j-Wave, FEM-coupled). Use their pairwise disagreement as a
-calibrated uncertainty signal. Combine into a teacher; distill a real-time
-student. Already proven: **student v1 from FNO_J achieves 23,288× speedup
-at 0.479 ms inference.**
+calibrated uncertainty signal toward an eventual combined teacher +
+distilled real-time student (combined-teacher training is **not yet
+fired** — the disagreement matrix below shows why). The proof-of-concept
+for the distillation arm: **student v1 distilled from FNO_J alone runs
+at 0.479 ms per inference vs ~15 ms for the teacher FNO and ~5–15 s for
+the underlying j-Wave solver — net ~30,000× speedup over the simulator
+and ~30× over the teacher.**
 
 **What was shipped this term.**
 
 | Surrogate | Geometry | Validation | Outcome |
 |---|---|---|---|
-| FNO_F (Phase 6.6b) | 32³ cubic | mean_pred = **0.144 PASS** | First FNO_F surrogate to clear sanity gate |
+| FNO_F (Phase 6.6b) | 32³ cubic | mean_pred = **0.144 PASS** | First FNO_F surrogate to clear both mean_pred *and* focal-zone gates |
 | FNO_J (Phase 7a) | 32×32×96 mini-array | mean_pred = **0.094 PASS** | First j-Wave FNO at full PDE-grid scale |
 | FNO_J L1 (Phase 7c) | 44×44×144 L1 cylinder | mean_pred = **0.193 PASS** | Forced new gate after focal-zone false-positive |
-| Student v1 (distilled from FNO_J) | — | — | **23,288× speedup, 0.479 ms inference** |
+| Student v1 (distilled from FNO_J) | — | inference 0.479 ms | ~30× over teacher, ~30,000× over j-Wave solver |
 | FNO_F (Phase 7d v3 thermal-aware) | 56×56×160 L1 cylinder | val_h1 **1.94** (8×8×24 modes, FAIL mean_pred) → **1.80** (12×12×36 modes, **PASS** mean_pred 0.281) | Third PASSing forward surrogate; deep-eval matches FNO_J L1 competence regime |
 
 **Headline methodology lesson.** When a model "plateaus," distinguish
@@ -182,6 +193,15 @@ mid-train → post-train → deploy → online feedback).
 
 ## Quick-start (5 commands to reproduce a sanity gate)
 
+> **No GPU? Want to verify without running the model?**
+> Skip the steps below and read the JSON receipts in `receipts/`
+> directly — every PASS-gate result is machine-readable. See
+> [`receipts/README.md`](receipts/README.md) for the per-folder index.
+> The same numbers cited in this README are sourced from those files.
+> CPU users can also run step 5 below with `--device cpu` (slow but
+> works on Mac).
+
+
 ```bash
 # 1. Clone + create venv
 git clone https://github.com/BigMetalGuy/multi-physics-fno-acoustic.git
@@ -205,11 +225,11 @@ PYTHONPATH=. python -m ml_inverse.generate_jwave_dataset \
     --n-trajectories 10 --grid-resolution 44 44 144 \
     --output-path /tmp/mini_jwave.h5
 
-# 5. Run the mean-prediction sanity gate
+# 5. Run the mean-prediction sanity gate (use --device cpu if no CUDA)
 PYTHONPATH=. python -m ml_inverse.scripts.mean_pred_sanity \
     --data-path /tmp/mini_jwave.h5 \
     --ckpt-best /tmp/fno_J.pt --norm /tmp/fno_J_norm.npz \
-    --device cuda --out /tmp/mean_pred.json
+    --device cuda --out /tmp/mean_pred.json   # or: --device cpu
 cat /tmp/mean_pred.json
 ```
 
@@ -282,6 +302,19 @@ crushed the FNO into the zero attractor. LR=1e-4 stays in the descent
 basin: val_h1 1.65 → 1.09 in 5 epochs. 50-ep real fired with LR=1e-4.
 
 ### Phase 7d post-mortem: from "ceiling" to "PASS" via architecture scaling
+
+**Reader note (honest correction up front):** an earlier version of this
+section claimed the FNO had hit its *architectural* representational
+ceiling, based on a target-projection-into-truncated-Fourier-modes
+estimate (the math is below). That estimate turned out to be a **loose
+upper bound** on FNO capacity, not a tight one — running the next-bigger
+architecture (12×12×36 modes, job 866) recovered 66% of the apparent
+loss against a ceiling that only moved 11%. The lesson "distinguish
+representational from optimization ceiling before scaling compute"
+still holds; the *quantitative* ceiling estimate via target projection
+needs a bigger-architecture comparison to validate, which we now
+have. The section below walks through both the original framing and
+the correction.
 
 Three 50-epoch runs (520, 603) plus four hyperparameter smokes (446, 469,
 565, 566) converged on **val_h1 ≈ 1.94** as an apparent floor. The natural
@@ -497,6 +530,52 @@ across every era documented in `docs/PROJECT_TIMELINE.md`:
 **Other tools used in narrower roles:** GitHub Copilot for occasional
 in-editor autocomplete; ChatGPT for one-off physics literature lookups
 (prompts not archived). All code-shipping work was through Claude Code.
+
+### Author contributions
+
+- **Jamie Marwell** — overall problem formulation, system architecture
+  (three-track multi-fidelity FNO surrogate stack, disagreement-weighted
+  combination strategy), forward-solver physics correctness review,
+  compute-allocation decisions, cluster operations, bug triage, the
+  Phase 6.x FNO_F iteration and Phase 7d v3 mode-scaling arcs.
+- **Emma Blemaster** — investigation, integration, and testing of the
+  **complex coupled thermal physics** that underlies the SW-43
+  thermal-aware extension. This includes verifying the FEM-coupled
+  solver's temperature-dependent density ρ(T) and speed-of-sound c₀(T)
+  pathways, confirming the bed-temperature regime spans physically
+  meaningful Al-alloy melting conditions, and stress-testing the
+  thermal-conditioning behavior of the v3 model against the underlying
+  multi-physics expectations. The v3 thermal-aware extension only
+  exists because this thermal-physics integration was characterized
+  end-to-end.
+
+## References (external)
+
+- **Fourier Neural Operator architecture:** Z. Li et al., *Fourier
+  Neural Operator for Parametric Partial Differential Equations*
+  (ICLR 2021). Original FNO formulation. Reported `rel L²` of
+  10⁻²–10⁻³ on cubic free-field Helmholtz benchmarks. Our cylindrical
+  multi-physics regime is harder; FNO_J L1 at val_h1 ≈ 1.05 with
+  mean_pred 0.193 is comparable order-of-magnitude given the
+  geometry-and-physics gap.
+- **Neural-operator family review:** N. Kovachki et al., *Neural
+  Operator: Learning Maps Between Function Spaces* (JMLR 2023). Frames
+  the FNO as a special case of a broader neural-operator family;
+  motivates the spectral-conv inductive bias.
+- **Phased-array acoustic control:** A. Marzo et al.,
+  *Holographic acoustic elements for manipulation of levitated objects*
+  (Nature Communications 2015) — the foundational paper for ultrasonic
+  phased-array inverse design. Their analytical-1/r superposition
+  baseline corresponds to our FNO_A track. The cylindrical chamber
+  with reflective walls extends the regime they studied (free-field).
+- **PML formulation:** A. Bermúdez et al., *An optimal perfectly
+  matched layer with unbounded absorbing function for time-harmonic
+  acoustics and elastodynamics* (J. Comp. Phys. 2007). The PML formula
+  used in `drip_physics/backends/femcoupled/helmholtz.py`.
+- **Eckart streaming:** standard formulation (Eckart 1948; see e.g.
+  Lighthill 1978 *Waves in Fluids*). Implemented in
+  `drip_physics/backends/femcoupled/coupling.py` for the FEM-coupled
+  forward.
 
 
 
