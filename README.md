@@ -1,5 +1,8 @@
 # Multi-Physics FNO Surrogates for Cylindrical Acoustic Inverse Design
 
+> **CS 153 submission — Project Track: Research (with Application/Product secondary).**
+> Co-authors: Jamie Marwell, Emma Blemaster.
+
 Training cross-physics Fourier Neural Operator (FNO) surrogates for the
 40 kHz acoustic forward problem in cylindrical chambers, then using
 their pairwise disagreement as a calibrated uncertainty signal for
@@ -10,6 +13,192 @@ is under-explored relative to the cubic free-field domains where most
 FNO acoustic literature lives. Applications include droplet manipulation
 for additive manufacturing, HIFU thermal focusing, acoustic tweezer
 trapping in microfluidic cylinders, and ultrasonic NDT.
+
+---
+
+## TL;DR (for graders, in 60 seconds)
+
+**Problem.** Acoustic inverse design in a 40 kHz cylindrical chamber driven
+by a 120-element phased array. The forward map (transducer phases → 3D
+pressure field) is a complex Helmholtz PDE; one FEM solve is ~17 seconds.
+PDE-constrained inverse (target field → phases) takes minutes-to-hours.
+Neither is fast enough for real-time control.
+
+**Approach.** Train three FNO surrogates (one per physics fidelity:
+analytical, j-Wave, FEM-coupled). Use their pairwise disagreement as a
+calibrated uncertainty signal. Combine into a teacher; distill a real-time
+student. Already proven: **student v1 from FNO_J achieves 23,288× speedup
+at 0.479 ms inference.**
+
+**What was shipped this term.**
+
+| Surrogate | Geometry | Validation | Outcome |
+|---|---|---|---|
+| FNO_F (Phase 6.6b) | 32³ cubic | mean_pred = **0.144 PASS** | First FNO_F surrogate to clear sanity gate |
+| FNO_J (Phase 7a) | 32×32×96 mini-array | mean_pred = **0.094 PASS** | First j-Wave FNO at full PDE-grid scale |
+| FNO_J L1 (Phase 7c) | 44×44×144 L1 cylinder | mean_pred = **0.193 PASS** | Forced new gate after focal-zone false-positive |
+| Student v1 (distilled from FNO_J) | — | — | **23,288× speedup, 0.479 ms inference** |
+| FNO_F (Phase 7d v3 thermal-aware) | 56×56×160 L1 cylinder | val_h1 **1.94** (8×8×24 modes) → **0.98 at ep5** with 12×12×36 modes | Hit and broke Fourier-truncation ceiling |
+
+**Headline methodology lesson.** When a model "plateaus," distinguish
+*representational ceiling* (architecturally representable) from
+*optimization ceiling* (what the optimizer finds). We spent ~80 GPU-hours
+sweeping learning rate before measuring representational capacity — the
+finding (8×8×24 modes lose 83% of target structure before any training)
+explained the plateau in minutes. Going to 12×12×36 modes broke through
+the ceiling on the first attempt.
+
+**Failure analysis & honest reframings shipped in this repo:**
+
+- Phase 7c v1's `mean_pred = 0.193 PASS` was a **false positive** —
+  wall-dominated learning that the existing gate missed.
+  `focal_zone_signal_quality.py` was added as a stricter gate
+  (commit `b169eb0`).
+- Initial deep-evaluation read of v3 thermal-aware as "broken" was
+  itself wrong — the focal-zone gate was misapplied to a forward-trained
+  model on random-phase data. The targets *themselves* have median
+  E_focal = 0.003 (less than uniform-baseline 0.0395). The model matching
+  ~zero focal energy was correct behavior on this evaluation.
+  See `docs/PROJECT_TIMELINE.md` Era 8 for the full disproof chain.
+
+---
+
+## For CS 153 graders — rubric mapping
+
+Each rubric criterion below cross-references where to find the evidence
+in this repo. Heavy detail is in `docs/PROJECT_TIMELINE.md`
+(chronological, every job & decision) and `docs/PIPELINE_MAPPING.md`
+(events mapped to the canonical ML pipeline: data → pretrain → train →
+mid-train → post-train → deploy → online feedback).
+
+### Problem & Insight (3 pts)
+
+- **The problem.** Real-time inverse design through a multi-physics
+  PDE — a problem that is wide open in the cylindrical-chamber regime.
+  See the *Problem* paragraph in the TL;DR and the `Architecture`
+  section below.
+- **Motivation.** Acoustic levitation of droplets and HIFU thermal
+  focusing both need closed-loop control at video frame rate; classical
+  inverse design is minutes-to-hours per query.
+- **Originality.** Three forward physics tracks of *increasing fidelity*
+  plus disagreement-weighted adversarial training is the original
+  contribution — not "train an FNO" generically, but a calibrated
+  multi-fidelity recipe. The cylindrical regime with hard reflective
+  walls + anisotropic grids has limited prior FNO literature.
+
+### Execution & Technical Work (5 pts)
+
+- **Three forward solvers** in `drip_physics/backends/` (analytical,
+  j-Wave wrapper, FEM-coupled with Bermúdez 2007 PML + Eckart streaming).
+- **Three FNO surrogates** with receipts in `receipts/` for every
+  PASS run.
+- **Dataset gen pipeline** (`ml_inverse/generate_*_dataset.py`).
+- **Training stack** (`ml_inverse/train.py`, `model.py`, `dataset.py`,
+  `adapter.py`, `cloud_sprint/*.sbatch`).
+- **Inverse design loop** (`ml_inverse/inverse.py`) — autograd
+  through any registered surrogate.
+- **Disagreement framework** (`ml_inverse/disagreement_analysis.py`).
+- **Sanity-gate scripts** (`ml_inverse/scripts/mean_pred_sanity.py`,
+  `ml_inverse/scripts/focal_zone_signal_quality.py`).
+- **Iteration evidence.** 30+ tracked SLURM jobs on the Stanford CS 153
+  Omniva cluster (full per-job log in `docs/PROJECT_TIMELINE.md`
+  Eras 5-9), plus three FNO_F architecture iterations (Phase 6.2 →
+  6.3 → 6.4 → 6.5 → 6.6b PASS), and the full v1 → v2 → v2.5 → v3
+  dataset evolution arc.
+
+### Evaluation & Evidence (3 pts)
+
+- **PASS gates** per phase, machine-readable in `receipts/`:
+  - `receipts/_phase66_cloud_production_run/mean_pred.json` —
+    FNO_F PASS (ratio 0.144)
+  - `receipts/_phase7a_cloud_production_run/mean_pred.json` —
+    FNO_J PASS (ratio 0.094)
+  - `receipts/_phase7c_cloud_production_run/mean_pred.json` —
+    FNO_J L1 PASS (ratio 0.193)
+  - `receipts/_focal_zone_signal_quality/` — the stricter second-layer
+    gate added after a false-positive PASS was caught.
+- **Disagreement framework calibration.** FNO_A vs analytical = 0.31%
+  noise floor; FNO_J vs analytical = 133% regime divergence — 430×
+  separation (`receipts/_disagreement_F_vs_J_focal/`).
+- **Failure analyses recorded in plain prose** in this README:
+  the Phase 7d v1/v2 hidden-conditioning failure, the v3 LR=1e-3
+  predict-zero collapse, the v3 LR=1e-4 DDP overfit at ep14, the
+  Fourier truncation ceiling discovery, and the focal-zone gate
+  misapplication self-correction.
+- **Reproducibility.** `requirements.txt`, pinned `cloud_sprint/`
+  sbatch templates, full SLURM job log in
+  `docs/PROJECT_TIMELINE.md`, every checkpoint distributed via
+  Cloudflare R2 with sha256 hashes.
+
+### Communication & Presentation (2 pts)
+
+- This README is structured for a cold reader: TL;DR → rubric map →
+  architecture → current state → narrative arcs → setup → running.
+- `docs/PROJECT_TIMELINE.md`: chronological 9-era deep timeline
+  (every meaningful decision and job).
+- `docs/PIPELINE_MAPPING.md`: maps each timeline event onto the
+  canonical ML pipeline stages (data → pretrain → train → mid-train
+  → post-train → deploy → online feedback).
+- `LICENSE`: MIT.
+- Demo video: see project submission (separate link).
+
+### Process, Integrity & Disclosure (2 pts)
+
+- **AI tools used** (specifics): Claude Code (Anthropic) was the
+  primary coding agent, orchestrating the cloud sprint, MLOps
+  pipeline, and the diagnostic post-mortems. See the *AI use*
+  section below for the full ownership split.
+- **Sources & prior art credited**: see *Forward solver detail*
+  section for citations to Bermúdez 2007 PML, Eckart streaming,
+  Kovachki FNO. The j-Wave backend was *discovered* to already
+  exist in the codebase (April 2026) — the repo includes the
+  audit chain (`research/JWAVE_BACKEND_AUDIT.md` in the private
+  monorepo) that fixed it in 4 specific ways.
+- **Major decisions and limitations**: documented in plain prose
+  in this README — including the false-positive PASS, the
+  representational ceiling, the multi-machine gen surprise, and
+  the kubectl-streaming transport failure.
+- **Public commit history**: this repo, visible. The private
+  development history feeding it is in a separate monorepo.
+- **Compute disclosed**: see *Compute* section at the bottom.
+
+---
+
+## Quick-start (5 commands to reproduce a sanity gate)
+
+```bash
+# 1. Clone + create venv
+git clone https://github.com/BigMetalGuy/multi-physics-fno-acoustic.git
+cd multi-physics-fno-acoustic
+python3 -m venv .venv && source .venv/bin/activate
+
+# 2. Install deps
+pip install -r requirements.txt
+pip install -e drip_physics_core/
+
+# 3. Fetch a published FNO_J checkpoint from R2 (public bucket)
+curl -L -H "User-Agent: drip-dashboard/1.0" \
+    -o /tmp/fno_J.pt \
+    https://pub-910e11cd3e304ebfbcaefa35051ad03e.r2.dev/fno_surrogate_jwave_phase7c_L1_omniva.pt
+curl -L -H "User-Agent: drip-dashboard/1.0" \
+    -o /tmp/fno_J_norm.npz \
+    https://pub-910e11cd3e304ebfbcaefa35051ad03e.r2.dev/fno_surrogate_jwave_phase7c_L1_omniva_norm.npz
+
+# 4. Generate a tiny dataset (or skip and use the existing fixture)
+PYTHONPATH=. python -m ml_inverse.generate_jwave_dataset \
+    --n-trajectories 10 --grid-resolution 44 44 144 \
+    --output-path /tmp/mini_jwave.h5
+
+# 5. Run the mean-prediction sanity gate
+PYTHONPATH=. python -m ml_inverse.scripts.mean_pred_sanity \
+    --data-path /tmp/mini_jwave.h5 \
+    --ckpt-best /tmp/fno_J.pt --norm /tmp/fno_J_norm.npz \
+    --device cuda --out /tmp/mean_pred.json
+cat /tmp/mean_pred.json
+```
+
+System dependencies for the FEM path (Ubuntu) live further down in
+the `Setup` section. The j-Wave path doesn't need them.
 
 ## Architecture
 
@@ -34,10 +223,11 @@ distill a student model for real-time inference.
 |---|---|---|---|---|
 | 6.6b | FNO_F | 32³ cubic | 0.144 | **PASS** |
 | 7a   | FNO_J | 32×32×96 mini-array | 0.094 | **PASS** |
-| 7c   | FNO_J | 44×44×144 L1 cylinder | 0.193 | **PASS** |
+| 7c   | FNO_J | 44×44×144 L1 cylinder | 0.193 | **PASS** (later flagged false-positive → 7c v2 retrain) |
 | —    | student v1 (distilled from FNO_J) | — | — | **23,288× speedup, 0.479 ms inference** |
 | 7d v1/v2 | FNO_F (fixed bed_temp) | 56×56×160 L1 cylinder | val_h1 ≈ 4.0 | **FLATLINE** — diagnosed as hidden-conditioning failure |
-| 7d v3 *(in progress)* | FNO_F thermal-aware | 56×56×160 L1 cylinder | smoke val_h1 1.65→1.09 in 5 ep | descending; 50-ep real underway |
+| 7d v3 (thermal-aware, 8×8×24 modes) | FNO_F | 56×56×160 L1 cylinder | val_h1 = **1.94** at ep 14 | architectural representational ceiling; ~70% of representable space captured |
+| 7d v3 (12×12×36 modes) smoke | FNO_F | 56×56×160 L1 cylinder | val_h1 = **0.98** at ep 5 (broke predict-zero baseline) | confirmed truncation ceiling; 50ep production in flight |
 
 All PASS receipts (mean_pred.json, disagreement images, training logs)
 live in `receipts/`.
@@ -237,6 +427,32 @@ author is a programmer by training — our backgrounds are in mechanical
 engineering, acoustics, thermal/fluids systems, and chemical/materials
 science.
 
+**Primary tool: Claude Code (Anthropic).** Used as the orchestrator
+across every era documented in `docs/PROJECT_TIMELINE.md`:
+
+- Writing all Python and shell code (training loop, FNO model wrapping
+  `neuraloperator`, j-Wave and FEM forward backends, dataset generators,
+  inverse loop, distillation pipeline, all evaluation scripts, this
+  README).
+- Driving the Stanford Omniva cluster (submit jobs via `sbatch`, monitor
+  via `squeue`/`sacct`, pull curves via `kubectl exec`, diagnose
+  failures from `slurm-*.out` logs).
+- Multi-machine MLOps orchestration during dataset gen — coordinating
+  parallel runs on Mac + Ryzen workstation, transferring datasets via
+  Cloudflare R2.
+- Persistent cross-session memory: working configurations, prior
+  failures, R2 credentials' location, methodology lessons accumulate
+  across sessions so session N+1 picks up the operational context.
+- Auto-polling: scheduled wakeups every 30 min to check long-running
+  training jobs and surface curve descents / failures / completions
+  to the human operator.
+
+**Other tools used in narrower roles:** GitHub Copilot for occasional
+in-editor autocomplete; ChatGPT for one-off physics literature lookups
+(prompts not archived). All code-shipping work was through Claude Code.
+
+
+
 What we own and are responsible for:
 
 * **Problem formulation.** The decision to build a multi-physics surrogate
@@ -290,6 +506,39 @@ type systems and PyTorch idioms from scratch. The decisions above are
 where the domain knowledge actually mattered.
 
 — Jamie Marwell & Emma Blemaster
+
+## Compute disclosure
+
+Cluster GPU work used the **Stanford CS 153 / Omniva** allocation (4× H100
+single-node, 250 GPU-hour quota). As of this submission, ~150 GPU-hours
+across the SW-27 closeout arc (Phase 7d/c gen + FNO_J/F/A training + v3
+hyperparameter sweep + mode-scaling experiment). Full per-job log in
+`docs/PROJECT_TIMELINE.md`. SLURM `sacct` is the authoritative record.
+
+Local compute:
+- **Mac M2 Max**: 2000 v3 dataset configs generated locally (~16 min wall,
+  8 parallel FEM workers). Apple Accelerate's `spsolve` ran ~3× faster
+  per core than the Ryzen + scipy path — empirically surprising.
+- **Ubuntu workstation (Ryzen 9 5900X, 64 GB)**: 5000 v3 dataset configs
+  (~100 min wall, 12 parallel FEM workers). Multi-machine total wall
+  ~2 h for 7000-config dataset vs ~5 h single-machine extrapolation.
+
+External infrastructure:
+- **Cloudflare R2**: model + dataset distribution. Public read-only bucket
+  at `https://pub-910e11cd3e304ebfbcaefa35051ad03e.r2.dev/` for all
+  published checkpoints. Used as the cluster ↔ R2 ↔ rig-b transport
+  intermediary after `kubectl cp` and `kubectl exec ... cat` were
+  observed to silently truncate multi-GB files.
+- **Railway**: production deployment of the dashboard / inference server
+  (separate Drip-internal repo).
+
+Earlier cloud spend (Lambda Labs, before the Stanford allocation came
+online): ~$80 across the Phase 6.x FNO_F iteration arc.
+
+DigitalOcean & Cloudflare CS 153 credits: not used for this project. The
+Stanford H100 allocation covered all training compute; R2 was on an
+existing Drip-internal account so the CS 153 Cloudflare credits weren't
+needed.
 
 ## License
 
