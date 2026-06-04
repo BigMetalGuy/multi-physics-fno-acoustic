@@ -3,7 +3,9 @@
 > **CS 153 submission — Project Track: Research (with Application/Product secondary).**
 > Co-authors: Jamie Marwell, Emma Blemaster.
 
-**Navigation:**
+### Navigation
+
+**Inside this README** —
 [TL;DR](#tldr-for-graders-in-60-seconds) ·
 [Rubric map](#for-cs-153-graders--rubric-mapping) ·
 [Quick-start](#quick-start-5-commands-to-reproduce-a-sanity-gate) ·
@@ -11,14 +13,35 @@
 [Current state](#current-state) ·
 [Phase 7d post-mortem](#phase-7d-post-mortem-from-ceiling-to-pass-via-architecture-scaling) ·
 [Dataset gen](#dataset-generation-pipeline) ·
+[Student model](#student-model) ·
+[Statistical methodology](#statistical-methodology) ·
+[Repository layout](#repository-layout) ·
+[Forward solver detail](#forward-solver-detail) ·
 [Setup](#setup) ·
 [Running](#running) ·
 [AI use](#ai-use) ·
+[References](#references-external) ·
 [Compute](#compute-disclosure)
-| Companion docs: [Timeline](docs/PROJECT_TIMELINE.md) ·
-[Pipeline mapping](docs/PIPELINE_MAPPING.md) ·
-[Metrics & trends — what the training tells us](docs/METRICS_AND_TRENDS.md) ·
-[Receipts index](receipts/README.md)
+
+**Companion docs** ([full index](docs/README.md)) —
+[Project timeline](docs/PROJECT_TIMELINE.md) (chronological, every decision/job/failure) ·
+[Pipeline mapping](docs/PIPELINE_MAPPING.md) (events × canonical ML pipeline stages) ·
+[Metrics & trends](docs/METRICS_AND_TRENDS.md) (per-metric deep dives + reliability evidence + pipeline-wide patterns) ·
+[Receipts index](receipts/README.md) (machine-readable PASS-gate evidence)
+
+### Reading paths (what to read for what question)
+
+| If you want to … | Read |
+|---|---|
+| Grade this in 5 minutes | [TL;DR](#tldr-for-graders-in-60-seconds) → [Current state table](#current-state) → [Receipts index](receipts/README.md) |
+| Verify the rubric is addressed | [Rubric map](#for-cs-153-graders--rubric-mapping) |
+| Reproduce a published result | [Quick-start](#quick-start-5-commands-to-reproduce-a-sanity-gate) (CPU-friendly path included) |
+| See every decision + failure mode in chronological order | [docs/PROJECT_TIMELINE.md](docs/PROJECT_TIMELINE.md) |
+| See where each event sits in a canonical ML training pipeline | [docs/PIPELINE_MAPPING.md](docs/PIPELINE_MAPPING.md) |
+| Understand *why* each metric is what it is + repeatability evidence | [docs/METRICS_AND_TRENDS.md](docs/METRICS_AND_TRENDS.md) |
+| Inspect raw PASS-gate JSONs and disagreement-matrix data | [receipts/](receipts/README.md) and [statistical receipt](receipts/_phase7d_v3_statistical_receipt.json) |
+| Find what AI tools were used and where | [AI use](#ai-use) section below |
+| Trace the FNO_F PASS story specifically | [Phase 7d post-mortem](#phase-7d-post-mortem-from-ceiling-to-pass-via-architecture-scaling) + [Metrics deep-dive § 1.1](docs/METRICS_AND_TRENDS.md#11-mean_pred-ratio--the-headline-pass-gate) |
 
 **What we built in one sentence.** Three neural-operator surrogates that
 predict 3D acoustic pressure fields inside a phased-array cylinder at

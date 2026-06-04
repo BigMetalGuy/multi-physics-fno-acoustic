@@ -1,10 +1,19 @@
 # Receipts Index
 
+← Back to [main README](../README.md) · [Project timeline](../docs/PROJECT_TIMELINE.md) · [Pipeline mapping](../docs/PIPELINE_MAPPING.md) · [Metrics & trends](../docs/METRICS_AND_TRENDS.md)
+
 Machine-readable evidence per phase. Each folder corresponds to a
 production run; PASS gate JSONs are at the top, attribution/disagreement
 PNGs are visualizations of the residual.
 
-← Back to [main README](../README.md) · [Project timeline](../docs/PROJECT_TIMELINE.md) · [Pipeline mapping](../docs/PIPELINE_MAPPING.md)
+**One-line summary by phase:**
+
+- [`_phase66_cloud_production_run/`](_phase66_cloud_production_run/) — Phase 6.6b FNO_F (32³ cubic), `mean_pred = 0.144` PASS
+- [`_phase7a_cloud_production_run/`](_phase7a_cloud_production_run/) — Phase 7a FNO_J (mini-array), `mean_pred = 0.094` PASS
+- [`_phase7c_cloud_production_run/`](_phase7c_cloud_production_run/) — Phase 7c FNO_J L1 (44×44×144), `mean_pred = 0.193` PASS (later flagged false-positive via focal-zone gate)
+- [`_focal_zone_signal_quality/`](_focal_zone_signal_quality/) — the stricter second-layer gate that caught the false positive
+- [`_disagreement_F_vs_J_focal/`](_disagreement_F_vs_J_focal/) — pairwise FNO_F vs FNO_J L1 residual, including the visualization that triggered the FNO_J L1 retrain
+- [`_phase7d_v3_statistical_receipt.json`](_phase7d_v3_statistical_receipt.json) — N=32 bootstrap-CI statistical analysis of 520 vs 866 (the FNO_F mode-scaling experiment) + disagreement matrix CIs + error decomposition
 
 ---
 
