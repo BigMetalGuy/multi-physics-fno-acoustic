@@ -92,28 +92,47 @@ training pipeline are summarized under [§ Student model](#student-model).
 | FNO_J (Phase 7a) | 32×32×96 mini-array | mean_pred = **0.094 PASS** | First j-Wave FNO at full PDE-grid scale |
 | FNO_J L1 (Phase 7c) | 44×44×144 L1 cylinder | mean_pred = **0.193 PASS** | Forced new gate after focal-zone false-positive |
 | Student v1 (distilled from FNO_J) | — | inference 0.479 ms | ~30× over teacher, ~30,000× over j-Wave solver |
-| FNO_F (Phase 7d v3 thermal-aware) | 56×56×160 L1 cylinder | val_h1 **1.94** (8×8×24 modes, FAIL mean_pred) → **1.80** (12×12×36 modes, **PASS** mean_pred 0.281) | Third PASSing forward surrogate; deep-eval matches FNO_J L1 competence regime |
+| FNO_F (Phase 7d v3 thermal-aware) | 56×56×160 L1 cylinder | val_h1 1.94 (8×8×24 modes, mean_pred 0.758 = FAIL) → val_h1 1.80 (12×12×36 modes, mean_pred 0.240 = PASS, N=32 bootstrap CI [0.238, 0.241]) | The mode-count change coincided with the FAIL → PASS transition; we ran one bigger-modes experiment, didn't ablate further |
 
-**Headline methodology lesson.** When a model "plateaus," distinguish
-*representational ceiling* (architecturally representable) from
-*optimization ceiling* (what the optimizer finds). We spent ~80 GPU-hours
-sweeping learning rate before measuring representational capacity — the
-finding (8×8×24 modes lose 83% of target structure before any training)
-explained the plateau in minutes. Going to 12×12×36 modes broke through
-the ceiling on the first attempt.
+**What the data shows (and what it doesn't).**
 
-**Failure analysis & honest reframings shipped in this repo:**
+- 866 (12×12×36 modes) measures lower than 520 (8×8×24 modes) on every
+  per-sample metric in our N=32 evaluation. The improvement is consistent
+  across samples (32/32), not a small mean shift. Mean_pred crossed
+  from 0.758 (FAIL) to 0.240 (PASS).
+- 866 still systematically underestimates Pa magnitude by 27% across
+  samples (vs 520's 51%). The error is dominated by systematic bias,
+  not by random per-sample variance. This is a *measured limitation* of
+  the current model.
+- The disagreement matrix's F-row dropped 14% from 520 to 866 — also
+  measured. F's row remains ~3× the project's calibrated A↔J regime-
+  divergence level, so FNO_combined (the originally-pitched combined
+  teacher) was not fired.
+- The single deliberate change between 520 and 866 was modes
+  (8×8×24 → 12×12×36). Parameter count also changed (118M → 264M) as
+  a side effect. We did not ablate which of the two is the binding
+  factor.
 
-- Phase 7c v1's `mean_pred = 0.193 PASS` was a **false positive** —
-  wall-dominated learning that the existing gate missed.
-  `focal_zone_signal_quality.py` was added as a stricter gate
-  (commit `b169eb0`).
-- Initial deep-evaluation read of v3 thermal-aware as "broken" was
-  itself wrong — the focal-zone gate was misapplied to a forward-trained
-  model on random-phase data. The targets *themselves* have median
-  E_focal = 0.003 (less than uniform-baseline 0.0395). The model matching
-  ~zero focal energy was correct behavior on this evaluation.
-  See `docs/PROJECT_TIMELINE.md` Era 8 for the full disproof chain.
+**What we don't know:**
+
+- Whether 866's PASS reproduces with different random seeds. Every
+  model was trained with seed=42.
+- Whether the forward surrogate is good enough for inverse design —
+  we did not run an inverse-design loop evaluation.
+- Whether FNO_combined would work if we fired it. The disagreement
+  data is consistent with not firing it; not firing it means we don't
+  have a counter-experiment.
+- See `docs/METRICS_AND_TRENDS.md § 2.4` for the full known-limitations
+  list.
+
+**Two corrections we made mid-project**, both documented inline below:
+- Phase 7c v1's `mean_pred = 0.193 PASS` was a false positive caught
+  later by the `focal_zone_signal_quality` gate (added in commit
+  `b169eb0`).
+- An earlier reading of the 8×8×24 truncation-projection result as
+  evidence of an "architectural representational ceiling" was retracted
+  when 866 demonstrated a 66% rel-L² drop the loose-upper-bound
+  estimate had said wasn't available.
 
 ---
 
@@ -328,60 +347,51 @@ radians ∈ [0, 2π], not unit-normalized), gradient explosion at LR=1e-3
 crushed the FNO into the zero attractor. LR=1e-4 stays in the descent
 basin: val_h1 1.65 → 1.09 in 5 epochs. 50-ep real fired with LR=1e-4.
 
-### Phase 7d post-mortem: from "ceiling" to "PASS" via architecture scaling
+### Phase 7d 520 → 866: what we measured
 
-**Reader note (honest correction up front):** an earlier version of this
-section claimed the FNO had hit its *architectural* representational
-ceiling, based on a target-projection-into-truncated-Fourier-modes
-estimate (the math is below). That estimate turned out to be a **loose
-upper bound** on FNO capacity, not a tight one — running the next-bigger
-architecture (12×12×36 modes, job 866) recovered 66% of the apparent
-loss against a ceiling that only moved 11%. The lesson "distinguish
-representational from optimization ceiling before scaling compute"
-still holds; the *quantitative* ceiling estimate via target projection
-needs a bigger-architecture comparison to validate, which we now
-have. The section below walks through both the original framing and
-the correction.
+**Sequence of runs.** Three 50-epoch FNO_F runs (520, 603) plus four
+hyperparameter smokes (446, 469, 565, 566), all with 8×8×24 modes, all
+landed at val_h1 ≈ 1.94. We then ran one experiment with 12×12×36
+modes (job 866, 50 ep, 4× H100, LR=1e-4, same dataset). Result:
+val_h1 = 1.799 best.
 
-Three 50-epoch runs (520, 603) plus four hyperparameter smokes (446, 469,
-565, 566) converged on **val_h1 ≈ 1.94** as an apparent floor. The natural
-read was "model is overfitting" or "needs more compute" — both incomplete.
-
-A direct test of the architecture's representational capacity gave us a
-first-pass estimate of the ceiling: **projecting the target fields onto
-the FNO's 8×8×24 truncated Fourier basis loses ~83% of the target signal**
-(relative L² = 0.83 between target and truncated-target). The trained
-520 model's relative L² = 0.73 sat near that loose upper bound, which
-*looked* like an architectural ceiling.
-
-We then ran the 12×12×36-modes experiment (job 866, 50 ep, 4× H100,
-LR=1e-4, same dataset). **Result: val_h1 = 1.799 best, mean_pred ratio
-0.240 [95% CI: 0.238, 0.241] — first thermal-aware FNO_F to PASS the
-sanity gate.** Deep statistical evaluation (N=32 samples from the v3
-dataset, bootstrap 95% CIs, full receipt in
+**Deep statistical evaluation** (N=32 samples from the v3 dataset,
+bootstrap 95% CIs, full receipt in
 [`receipts/_phase7d_v3_statistical_receipt.json`](receipts/_phase7d_v3_statistical_receipt.json)):
 
 | Metric | 520 (8×8×24) | 866 (12×12×36) | Paired test |
 |---|---|---|---|
-| model rel L² (normalized) | 0.747 [0.734, 0.759] | **0.236 [0.235, 0.238]** | Δ = −0.51 [−0.52, −0.50]; **866 better in 32/32 samples** |
-| mean_pred ratio (PASS < 0.5) | 0.758 ❌ FAIL | **0.240** ✅ **PASS** | predict-mean baseline 0.985 [0.981, 0.990] |
-| Pa magnitude ratio pred/target | 0.490 [0.485, 0.494] | **0.732 [0.729, 0.734]** | Δ = +0.24 [+0.24, +0.25] |
-| Pa-magnitude error decomposition | −51.0% systematic bias, 1.3% random std → **systematic-dominated** | −26.8% systematic bias, 0.7% random std → **systematic-dominated, but 47% smaller systematic** | both models systematically underestimate magnitude; 866 cuts the bias in half |
-| truncation ceiling rel L² (architectural bound) | 0.826 | 0.735 | −11% |
+| model rel L² (normalized) | 0.747 [0.734, 0.759] | 0.236 [0.235, 0.238] | Δ = −0.51 [−0.52, −0.50]; 866 better in 32/32 samples |
+| mean_pred ratio (PASS < 0.5) | 0.758 FAIL | 0.240 PASS | predict-mean baseline 0.985 [0.981, 0.990] |
+| Pa magnitude ratio pred/target | 0.490 [0.485, 0.494] | 0.732 [0.729, 0.734] | Δ = +0.24 [+0.24, +0.25] |
+| Pa-magnitude error decomposition | −51% systematic bias, 1.3% random std | −27% systematic bias, 0.7% random std | both systematic-dominated; 866 bias 47% smaller |
+| truncation ceiling rel L² (loose upper bound) | 0.826 | 0.735 | −11% |
 
-**Statistical takeaways** (all per-sample paired tests, N=32, bootstrap CIs):
+**What the data shows.** 866 is measurably better than 520 on every
+metric on every sample in this evaluation. The improvement is not a
+small mean shift across noisy distributions — distributions don't
+overlap (520 per-sample rel L² range [0.68, 0.80] vs 866 [0.23, 0.24]).
+Both models systematically under-predict Pa magnitude (520 by 51%, 866
+by 27%); the bias is large relative to per-sample random variance.
 
-- **866 strictly dominates 520 in every sample tested** (32/32; CI doesn't cross zero). The improvement is not a small mean shift across noisy distributions; it's a separation of distributions: 520's per-sample rel L² has p05/p95 of [0.68, 0.80] while 866's is [0.23, 0.24]. There is no overlap.
-- **Both models beat the predict-mean baseline** (predict-mean rel L² = 0.985). 866 beats it in 32/32 samples; 520 also beats it in 32/32 samples but by less.
-- **The dominant remaining error in 866 is systematic** (model output is ~27% smaller than target in Pa space, consistently — random per-sample variance is only 0.7%). This means the failure mode is *calibration*, not *structure*: an output rescaling head trained against test-set magnitudes could likely close most of the remaining 27% bias.
+**What changed between 520 and 866** was the mode count (8×8×24 →
+12×12×36). That's the deliberate change. The model also got ~2.2×
+more parameters as a side effect, so both *representational capacity*
+and *optimization landscape* changed. We did not run a controlled
+ablation that isolates one from the other. We don't know which is the
+binding lever; we know the package of both produced the result.
 
-**Honest correction to the original "truncation ceiling" framing.** The
-truncation test moved by only 11% (0.826 → 0.735) while the actual model
-loss moved 66% (0.730 → 0.247). That math tells us the truncation
-projection was a **loose upper bound** on FNO capacity, not a tight one:
-real FNOs have hidden_channels, real-space convolutions, the conditioning
-MLP, and prior pathways that let them transcend the strict truncated-mode
-subspace. 520 wasn't actually at its architectural ceiling — it was at a
+**An earlier reading of the truncation ceiling, retracted.** Before we
+ran 866, we computed that projecting the target fields onto the FNO's
+8×8×24 truncated Fourier basis loses ~83% of target signal. We
+reported that as evidence of an "architectural representational
+ceiling." When 866 with 12×12×36 modes produced a 66% drop in model
+rel L² while the truncation-projection ceiling only moved 11%, that
+ruled out the tight-ceiling interpretation: real FNOs have additional
+pathways (hidden_channels, real-space convolutions, conditioning MLP,
+prior augmentation) that let them transcend the strict truncated-mode
+subspace. **The truncation projection is a loose upper bound, not a
+tight one.** 520 wasn't at a fundamental architectural ceiling — it was at a
 *training-dynamics* limit (cosine-LR + DDP overfit) that the bigger model
 happened to escape. **The methodological lesson still holds**: distinguish
 representational from optimization ceiling before scaling compute. The
@@ -412,31 +422,31 @@ A↔J = 1.298 [1.295, 1.301]  (unchanged across the two F variants — sanity �
 ```
 
 **Paired F-row compression tests (per-sample, N=32):**
-- Δ(A↔F) = −0.612 [95% CI: −0.648, −0.578] — **statistically significant**, A↔F dropped in 32/32 samples
-- Δ(J↔F) = −0.749 [95% CI: −0.794, −0.705] — **statistically significant**, J↔F dropped in 32/32 samples
+- Δ(A↔F) = −0.612 [95% CI: −0.648, −0.578]; A↔F dropped in 32/32 samples
+- Δ(J↔F) = −0.749 [95% CI: −0.794, −0.705]; J↔F dropped in 32/32 samples
 
-F's row dropped 14% in both columns; the change is consistent across every
-sample, not driven by outliers. **But the F-row still sits at ~3× the
-project's regime-divergence calibration** (A↔J at 1.30). Under the original
-disagreement-framework's calibration scheme (where A↔J at 130% is the
-"complementary physics" signal level), F at 372%–444% is dominated by
-representational deficit rather than complementary-physics signal.
-**FNO_combined adversarial training is therefore not yet justified** —
-the disagreement weighting would be measuring F's representational gap to
-A/J, not novel physics components. Mode-scaling moved us in the right
-direction with a statistically significant effect; another 1–2 iterations
-of architecture refinement (or further training) are needed before the
-disagreement matrix is interpretable as "complementary physics" rather
-than "F still has slack."
+F's row dropped 14% in both columns. F's row remains ~3× higher than
+A↔J. The original disagreement-framework calibration (from earlier
+project work) reported A↔J at ~130% as "regime divergence" (the level
+of disagreement attributable to complementary physics). F's row at
+370–449% is above that calibration.
 
-**Methodological lesson:** when val plateaus, distinguish *optimization
-ceiling* from *representational ceiling* before scaling compute, AND
-verify the representational ceiling estimate is tight by running a
-single bigger-architecture comparison (cheap: one production run was
-enough to invalidate our loose-bound estimate). We spent ~80 GPU-hr
-sweeping LR (520 → 565 → 603) on 8×8×24 modes before testing 12×12×36;
-the bigger-mode experiment cost ~40 GPU-hr and produced the PASS that
-LR-sweeping never could have.
+**We did not fire FNO_combined.** The disagreement-weighted
+adversarial training the project was sold on requires the F-row to be
+close enough to the regime-divergence calibration that the weighted
+signal is interpretable as physics rather than representational gap.
+The data above is consistent with that decision (F's row is too high
+to interpret cleanly) but does not prove FNO_combined would have
+failed — we don't know.
+
+**What we ran, what we didn't.** We spent ~80 GPU-hr varying LR
+(520 → 565 → 603) on 8×8×24 modes. None of those runs produced a
+mean_pred PASS. We then ran one experiment at 12×12×36 modes (~40
+GPU-hr) and observed a PASS. We did not run controlled experiments
+that isolate "more modes" from "more parameters." We did not run
+multi-seed validation. We did not run an inverse-design loop
+evaluation. See [docs/METRICS_AND_TRENDS.md § 2.4](docs/METRICS_AND_TRENDS.md#24-known-limitations)
+for the full list of known limitations.
 
 ### Dataset generation pipeline
 
@@ -459,25 +469,33 @@ intermediary is the canonical transport.
 
 ## Student model
 
-The distillation arm of the pipeline. Student v1 is the production
-inference path — it's what would run inside a closed-loop controller
-in deployment.
+The distillation arm of the pipeline. Student v1 was produced in
+earlier project work (pre-Stanford cluster era) and is referenced here
+because it's the inference-latency artifact we cite.
 
 | Property | Student v1 | Teacher (FNO_J) |
 |---|---|---|
-| Architecture | Compact convolutional + MLP head (residual prior baked in) | Full FNO at 44×44×144 with 8/8/24 modes, 128 hidden, 4 layers |
-| Param count | ~5M | ~118M |
-| Inference (CPU, batch=1) | **0.479 ms** | ~15 ms |
-| Trained against | FNO_J outputs (50k forward-pass samples), supervised L² + H¹ | Phase 7c j-Wave dataset (5000 configs FEM-style targets) |
-| Speedup over j-Wave solver | ~10,000–30,000× | ~330–1000× |
-| Quality | Validated against mean_pred (within 5% of teacher) | val_h1 = 1.05, mean_pred 0.193 |
+| Architecture | small CNN+MLP student (specific layer config not documented in this submission's receipts; see private monorepo) | Full FNO at 44×44×144 with 8/8/24 modes, 128 hidden, 4 layers |
+| Inference latency | 0.479 ms (CPU, batch=1; reference hardware not specified in the original measurement) | ~15 ms (same caveat) |
+| Trained against | FNO_J outputs, supervised L² + H¹ loss | Phase 7c j-Wave dataset (5000 configs) |
+| Quality validation in this submission | none — the student is referenced for latency only | val_h1 = 1.05, mean_pred = 0.193 |
 
-**Why student v1 is the deployment target** (not the teacher): inverse
-design through the autograd graph of the teacher takes 30+ optimization
-steps per control frame at 15 ms each = 450 ms per closed-loop control
-update. The student at 0.479 ms gives ~30× headroom inside a 16 ms
-control budget (60 fps), enough to converge inverse design within a
-single control frame.
+**Honest limitations on this section.** Several student-v1 details
+(parameter count, exact architecture, training-set size, reference
+hardware for the 0.479 ms inference time) were generated in earlier
+project work in a separate (private) monorepo and are not reproducible
+from this submission's artifacts. The latency number is what was
+historically reported; the supporting receipts for it are not in
+`receipts/` here. We retain the student v1 reference because the
+distillation arm is part of the pipeline's design, but we are not
+validating the student's quality in this submission.
+
+For the deployment story (real-time inverse design through autodiff
+through the surrogate), the relevant latency would be teacher inference
+× number of inverse-loop steps. At ~15 ms teacher × 30 steps = 450 ms
+per control update — too slow for closed-loop at 60 fps. The student
+addresses this latency gap. Whether the student's quality is good
+enough for inverse design (vs the teacher) is not validated here.
 
 **Student v2** (distilled from a future `FNO_combined` teacher) is the
 target once the disagreement matrix shows F's row at the regime-
@@ -487,37 +505,34 @@ section above.
 ## Statistical methodology
 
 All quantitative claims in the deep evaluation tables and the
-disagreement matrix are reported with **bootstrap 95% confidence
-intervals (N=32 samples drawn from the v3 dataset, 1000 bootstrap
-resamples, seed=42)**. Where two models are compared, we report
-**paired per-sample differences** — i.e., is 866's rel L² smaller than
-520's for the *same* sample, not just on average across different
-samples. This rules out "small mean shift across noisy distributions"
-as an alternative explanation.
+disagreement matrix use **bootstrap 95% confidence intervals (N=32
+samples drawn from the v3 dataset, 1000 bootstrap resamples,
+seed=42)**. Where two models are compared, we use **paired per-sample
+differences** so the comparison is "same input, both models" rather
+than "different averages."
 
-The full statistical receipt is at
-[`receipts/_phase7d_v3_statistical_receipt.json`](receipts/_phase7d_v3_statistical_receipt.json)
-and contains, for every metric reported:
+The full statistical receipt:
+[`receipts/_phase7d_v3_statistical_receipt.json`](receipts/_phase7d_v3_statistical_receipt.json).
+Per metric it contains: per-sample distribution summary (mean, median,
+std, p05, p95), bootstrap 95% CI on the mean, paired-difference test
+result with CI, and error decomposition for Pa magnitude.
 
-- per-sample distribution summary (mean, median, std, p05, p95)
-- bootstrap 95% CI on the mean
-- paired-difference test result with CI and fraction-A-wins / fraction-B-wins
-- error decomposition for Pa magnitude (systematic bias vs random std)
+**Why N=32 and what that means.** N=32 is what was tractable on the
+analysis machine (Mac) within the submission window — per-sample
+forward passes of a 118M–264M-parameter FNO at 56×56×160 take 30–90 s
+each on CPU. Bootstrap CIs at N=32 are tight as bootstrap statistics
+go, but a real bound on sampling variance from the underlying
+distribution would benefit from N=100+. The CIs we report are correct
+for the bootstrap procedure we ran; they don't substitute for larger
+sample size.
 
-**Error classification.** For 866's Pa-magnitude error, the systematic
-component (−27% mean bias) is 38× larger than the random component
-(0.7% per-sample std). This puts the residual error in the
-**systematic / calibration** category rather than the **random /
-representational** category — meaning a learned output rescaling
-(trained on test-set magnitudes) is the natural fix; more training data
-or model capacity would address the wrong axis.
-
-**Why N=32 rather than larger.** Per-sample forward passes of a 118M-
-to 264M-parameter FNO at 56×56×160 grid on CPU take 30-90 s each;
-N=32 is the largest tractable on Mac for the full 4-model statistical
-sweep within the submission window. The bootstrap CI widths at this
-N (typically ±0.005 to ±0.05) are tight enough that scaling to N=128
-would narrow them by only ~2× — the conclusions are robust.
+**Single-seed limitation.** Every reported model was trained with
+seed=42. We have no evidence that the 866 mean_pred PASS reproduces
+with seed=43, 44, etc. Given that we observed three reproducible
+seed-sensitive failure modes elsewhere in the project (LR collapse,
+DDP overfit, fixed-bed-temp flatline), multi-seed validation is the
+single experiment most likely to either confirm or invalidate the
+headline PASS. We didn't run it.
 
 ## Repository layout
 

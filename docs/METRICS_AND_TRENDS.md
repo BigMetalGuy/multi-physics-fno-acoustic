@@ -1,175 +1,64 @@
-# Metrics & Trends — What the Training Tells Us About the Problem
+# Metrics & Trends — Measured Values + Known Limitations
 
 ← Back to [main README](../README.md) · Companions: [Project timeline](PROJECT_TIMELINE.md) · [Pipeline mapping](PIPELINE_MAPPING.md) · [Statistical receipt](../receipts/_phase7d_v3_statistical_receipt.json)
 
-**Purpose.** The other docs catalog *what happened* (timeline) and *where each event sits in the canonical ML pipeline* (pipeline mapping). This doc is the *third axis*: **what the metrics mean, why they are what they are, what the training itself tells us about the underlying problem, and how the repeated runs prove reliability.**
+## TL;DR of this doc
+- The measured numbers (with bootstrap 95% CIs at N=32) for every metric we report.
+- Reproducibility evidence from the runs we ran — what *did* repeat and what we *didn't test* for repeatability.
+- A frank list of what we don't know and what the data does NOT support.
 
-Three sections:
-1. **Per-metric deep dives** — each metric we care about, with the causal chain that produced its value
-2. **Repeatability & reliability** — what the smoke→production track record proves about pipeline maturity
-3. **Pipeline-wide patterns** — what the whole 30+ run arc says about the cylindrical-acoustic FNO problem class
+This doc is intentionally not interpretive. Earlier drafts of it speculated about *mechanisms* — why a number was what it was, what the model was "really" doing. Several of those speculations couldn't be verified; we've removed them rather than dress guesses as findings. For the longer-term work this surrogate stack feeds into, knowing **what we actually measured + where the gaps are** is more useful than a confident narrative we can't defend.
 
 ---
 
-## 1. Per-Metric Deep Dives
+## 1. Per-Metric Reported Values (with CIs)
+
+All numbers from N=32 samples of the v3 dataset, bootstrap 95% CI (1000 resamples, seed=42). Raw JSON: [`../receipts/_phase7d_v3_statistical_receipt.json`](../receipts/_phase7d_v3_statistical_receipt.json).
 
 ### 1.1 `mean_pred ratio` — the headline PASS gate
 
-**What it measures.** Per-sample relative L² of the model's output vs the
-batch mean of targets. A perfect predictor gives 0; a model that just
-outputs the train-set mean gives 1; a model worse than predict-mean
-gives > 1. The PASS threshold (< 0.5) is "model is at least 2× better
-than predict-mean."
-
-**Current numbers (N=32, bootstrap 95% CI, seed=42):**
-
-| Model | mean_pred ratio | 95% CI | Verdict |
+| Model | mean_pred ratio | 95% CI | vs threshold |
 |---|---|---|---|
-| 520 (8×8×24 modes) | 0.758 | [0.745, 0.770] | ❌ FAIL |
-| 866 (12×12×36 modes) | **0.240** | [0.238, 0.241] | ✅ **PASS** |
-| predict-mean baseline | 1.000 | — | — (reference) |
+| 520 (8×8×24 modes) | 0.758 | [0.745, 0.770] | FAIL (> 0.5) |
+| 866 (12×12×36 modes) | 0.240 | [0.238, 0.241] | PASS (< 0.5) |
+| predict-mean baseline | 1.000 | [reference] | — |
 
-**Why 520 failed:** the model's normalized output had std 0.84 vs target
-std 1.00 (16% under-amplitude in normalized space) AND systematic Pa
-underestimate of −51%. The L² error was dominated by the magnitude gap,
-not by structural error. Per-sample paired comparison vs predict-mean:
-520 wins in 32/32 samples — so it IS doing better than predict-mean — but
-only by an average of 24 percentage points (0.758 vs 1.000). The threshold
-demands 50.
+**What we measured.** Going from 8×8×24 to 12×12×36 modes (the only deliberate change between 520 and 866) coincided with mean_pred dropping from FAIL to PASS. Paired per-sample test: 866 has lower rel L² than 520 in 32/32 samples (CI on the paired difference doesn't cross zero).
 
-**Why 866 passed:** at 12×12×36 modes, output std rose to 0.95 (5% under
-target) and Pa systematic underestimate halved to −27%. The L² error
-dropped from 0.747 → 0.236, a 68% reduction. **The improvement is not
-explained by mode count alone** — the truncation-ceiling test moved
-only 11% (0.826 → 0.735, see § post-mortem in README). The bigger model
-also escaped the DDP-LR-overfit attractor that 520 was stuck in (best.pt
-saved at ep14 with val starting to climb). The bigger architecture both
-**increases representational ceiling slightly** AND **provides more
-favorable optimization landscape** that the smaller model gets trapped
-in. Causal contribution split (estimated from controlled comparisons):
-~25% ceiling, ~75% optimization dynamics.
-
-**What decisions led here:**
-1. Initial 8×8×24 choice was based on `n_modes = grid // 4 per axis`
-   heuristic — the default in train.py. Never validated against the
-   actual data's frequency content.
-2. We didn't compute the truncation ceiling until *after* val_h1 had
-   plateaued and we'd burned ~80 GPU-hr on LR sweeps. That ceiling test
-   (10 minutes of compute, no GPU) would have suggested the architecture
-   was the binding lever from the start. **Methodological lesson saved
-   to `fno-fourier-truncation-ceiling.md` memory.**
-3. Once we tested 12×12×36 modes at smoke scale (job 800, val=0.98 ep5),
-   the result was unambiguous enough to commit ~40 GPU-hr to 866.
-
----
+**What we don't know.**
+- Whether the improvement came from "more representational capacity" or "different optimization landscape from more parameters" — both changed simultaneously. A clean ablation would hold one fixed; we didn't do that.
+- Whether the result reproduces with different random seeds — every model was trained with seed=42.
+- Whether the 12×12×36 PASS holds out-of-distribution (different array geometries, different bed-temp ranges, focused-vs-random phases).
 
 ### 1.2 `val_h1` — the training-loop loss metric
 
-**What it measures.** Relative H¹ Sobolev norm (combining L² of the
-field and L² of its gradient). Used as the training loss because
-downstream inverse design uses `force = ∇|P|²`, so gradient fidelity
-matters.
+| Model | best val_h1 | best test_all_h1 |
+|---|---|---|
+| 520 | 1.940 (ep 14) | 1.903 (ep 15) |
+| 866 | 1.799 (ep 25) | 1.754 (ep 25) |
 
-**Why val_h1 only moved 7% while rel L² moved 66%.** This is a subtle
-but important finding.
+**What we measured.** val_h1 dropped 7% from 520 to 866. Rel L² (normalized space, on the same samples) dropped 66%.
 
-```
-val_h1     = sqrt( L²(pred - target)² + measure × L²(∇pred - ∇target)² )
-             / sqrt( L²(target)² + measure × L²(∇target)² )
-
-For our 56×56×160 grid with axis-length measure:
-  - L² term: dominated by mid-frequency content (the bulk of field energy)
-  - Gradient L² term: dominated by HIGH-frequency content (where ∇ acts as a high-pass filter)
-```
-
-Going from 8×8×24 to 12×12×36 modes:
-- L² of the pred-target residual dropped sharply (the model can now
-  represent more of the mid-frequency content)
-- **L² of the gradient residual barely moved** — the high-frequency
-  content above mode 12 is still being missed
-- The H¹ norm pools both terms, so the H¹ ratio only moved a fraction
-  of what the pure L² ratio moved
-
-**Implication.** **val_h1 as reported in the training curves under-states
-the model's actual capability.** A "val_h1 plateaued at 1.80" reads
-worse than "predicted field captures 76% of target structure in L²."
-Both are true. For downstream inverse design (which uses ∇|P|² so high-
-frequency matters), val_h1 is the right gate. For "is the model learning
-anything," rel L² is more interpretable.
-
-**What decisions led to it.** The H¹ loss was inherited from prior FNO
-literature on Helmholtz problems and is defensible on physics grounds
-(gradient matters for force computation). The `measure=axis_lengths_m`
-correction was added 2026-05-19 in the era-2 audit pass (`Fix Model-H1`)
-after we noticed the anisotropic grid was biasing the H¹ norm. Without
-that fix, the z-axis (160 voxels) would have been under-weighted 3× vs
-the xy axes (56 voxels) due to default measure=1.0 per voxel.
-
----
+**What we don't know.**
+- Why val_h1 moved much less than rel L². One possible reason is that val_h1 includes a gradient term (`||∇pred - ∇target||²`) that emphasizes high-frequency content both models may still miss equally — but we didn't separately measure the L² and gradient components of the val_h1, so this is conjecture.
+- Whether val_h1 at ~1.8 is "good" for this problem class. We don't have an external benchmark for cylindrical FEM-coupled Helmholtz at this resolution.
 
 ### 1.3 `Pa magnitude ratio` — output calibration
 
-**What it measures.** Mean absolute value of denormalized model output
-divided by mean absolute value of denormalized target, both in physical
-Pascals.
+| Model | pred Pa / target Pa | 95% CI | systematic bias | random std |
+|---|---|---|---|---|
+| 520 | 0.490 | [0.485, 0.494] | −51.0% | 1.27% |
+| 866 | 0.732 | [0.729, 0.734] | −26.8% | 0.70% |
 
-**Current numbers (N=32):**
+**What we measured.** Both models systematically under-predict Pa magnitude. For 866 the systematic bias is 38× larger than the per-sample random standard deviation.
 
-| Model | pred Pa / target Pa | systematic bias | random std |
-|---|---|---|---|
-| 520 | 0.490 [0.485, 0.494] | −51.0% | 1.27% |
-| 866 | 0.732 [0.729, 0.734] | −26.8% | 0.70% |
+**What we don't know.**
+- The mechanism. The H¹ loss has different scale sensitivities for its L² and gradient terms, which *could* produce systematic-bias floors at imperfect scales, but we haven't tested this — e.g., we haven't trained an L²-only version of 866 to see if the bias changes. The mechanism explanation is speculation, not measurement.
+- Whether the systematic bias would survive a learned output-rescaling head. That fix is plausible (because the per-sample random std is small relative to the bias) but untested.
 
-**Why both models systematically under-predict.** The model is trained
-in **normalized** space (`ChannelNormalizer` applied per-channel, stats
-from train split). At inference, the model output is denormalized back
-to physical Pa. **If the model's normalized output has slightly smaller
-variance than the true normalized target distribution**, the
-denormalized Pa magnitude is correspondingly smaller.
+### 1.4 Disagreement matrix — pairwise rel L² in physical Pa
 
-We see exactly this:
-- 520: normalized std ratio pred/target = 0.84 → Pa magnitude 49% of
-  target (NOT 84%, because the relationship is *amplitude-squared* for
-  energy in some downstream uses; Pa magnitude is amplitude-linear,
-  so the 84% normalized std → 49% Pa is doing something nonlinear that
-  warrants further investigation but probably reflects the channel
-  normalizer's specific scaling)
-- 866: normalized std ratio = 0.95 → Pa magnitude 73% — closer match,
-  same nonlinearity pattern
-
-**Why this is a CALIBRATION problem, not a STRUCTURE problem.**
-
-The error decomposition is striking:
-- 866 systematic bias: **−27%** (mean under-prediction across all samples)
-- 866 random std: **0.7%** (per-sample variance around that bias)
-- Ratio: bias / std = 38 — **the error is overwhelmingly systematic**
-
-What this means concretely: 866's predictions are TIGHTLY clustered
-around 73% of target magnitude. The model isn't "noisy" — it's
-**consistently miscalibrated**. The natural fix is a learned output
-rescaling head, trained on a small held-out set against true Pa
-magnitudes. This is much cheaper than more model capacity or more
-training data.
-
-**What decisions led here.** The H¹ loss is partially **scale-invariant**
-— the gradient term is invariant to constant scaling of the field
-(`∇(cf) = c·∇f`, so `||c·∇f - ∇f||² = (c-1)²||∇f||²` is non-zero but
-*minimized at c=1 not c=arbitrary*). The L² term has stronger scale
-sensitivity. The mix of L² + H¹ creates a loss landscape where the
-optimizer can find local minima with the *wrong* scale but the *right*
-structure, and slow-LR cosine decay can leave it there. **This is the
-mechanism behind both observations**: 520 sits at a deeper-wrong-scale
-local minimum; 866 has more parameters to find a better-scale one.
-
----
-
-### 1.4 Disagreement matrix — calibrated uncertainty signal
-
-**What it measures.** Pairwise relative L² between trained FNO_A,
-FNO_J, FNO_F outputs, denormalized to physical Pa, resampled to a
-common 32³ subgrid for comparison.
-
-**Current numbers (N=32, bootstrap 95% CI):**
+N=32, resampled to common 32³ subgrid for cross-grid comparison.
 
 | Pair | 520 F | 866 F |
 |---|---|---|
@@ -177,340 +66,108 @@ common 32³ subgrid for comparison.
 | A↔F | 4.329 [4.284, 4.375] | 3.718 [3.695, 3.738] |
 | J↔F | 5.192 [5.135, 5.256] | 4.443 [4.414, 4.471] |
 
-**Why A↔J is so stable.** A↔J is 1.298 regardless of which F we use —
-expected, since A and J weren't retrained. The CI is also extremely
-tight (width 0.006) because both models produce reproducible outputs
-on the same input. **This sanity-checks the entire evaluation
-methodology**: if there were stochastic noise in the forward passes
-or sample selection, A↔J would vary.
+**What we measured.**
+- A↔J is identical between the two F-variants (sanity: A and J weren't retrained).
+- F-row dropped 14% in both columns going 520 → 866. Paired per-sample test: drop is consistent in 32/32 samples for both A↔F and J↔F.
+- F-row remains 2.9× to 3.4× higher than A↔J.
 
-**Why A↔J = 1.30 specifically.** From the original disagreement-
-framework calibration:
-- analytical vs analytical (truth) = 0% (definitionally)
-- FNO_A vs analytical (truth) = 0.31% → noise floor (model learned
-  the analytical with high fidelity)
-- FNO_J vs analytical (truth) = 133% → regime divergence (j-Wave
-  captures diffraction + reflection that analytical doesn't)
+**Calibration context.** The original disagreement-framework calibration (from earlier work in this project, in the private monorepo, not in this submission's receipts/) reported:
+- FNO_A vs analytical-truth = 0.31% rel L² ("noise floor")
+- FNO_J vs analytical-truth = 133% rel L² ("regime divergence")
 
-So **A vs J ≈ J vs analytical ≈ 130%** because FNO_A converges to the
-analytical reference. The A↔J residual *is* the J-vs-analytical
-residual, which IS the missing-physics signal (diffraction/reflection)
-that the disagreement framework is designed to isolate. ✓ working as
-designed.
+Our current measurement of A↔J = 130% matches that earlier "regime divergence" value. F-row at 370–449% is above either of those calibration points.
 
-**Why F-row is still 3-4× higher than A↔J.**
-
-Two contributions, additive in expectation but hard to separate
-without further experiments:
-
-1. **Physics contribution.** FEM-coupled solves Helmholtz with
-   temperature-dependent ρ(T), c₀(T), AND Eckart streaming corrections.
-   These produce genuinely different fields than j-Wave's free-field
-   Helmholtz, especially at higher bed temperatures. We *should* see
-   some F vs J disagreement from this — call this the "real signal."
-
-2. **Representational deficit contribution.** F's outputs are 27%
-   systematically smaller in Pa magnitude than target (per the error
-   decomposition). A and J are presumably better calibrated. So F vs A
-   includes a magnitude mismatch component that's not physics-real.
-
-Without a held-out test of F at the same bed-temp regime that A/J were
-implicitly evaluated on (impossible since A/J are trained on different
-datasets), we can't cleanly separate these. **What we CAN say**: the
-F-row is decreasing as F improves (520 F → 866 F dropped 14% in both
-columns, statistically significant), and the trend extrapolates that
-once F reaches a magnitude ratio closer to 1.0, the F-row will
-approach a value reflecting only physics signal. We're not yet there.
-
-**Why FNO_combined is gated on this.** The disagreement-weighted
-adversarial loss weights regions where the surrogates disagree most
-HIGHER, on the theory that high-disagreement = high-uncertainty =
-needs-more-attention. If F's disagreement is dominated by representational
-deficit, this weighting actively redirects the combined teacher's
-attention to F's *mistakes*, not to physics signal. Result: combined
-teacher learns to be F-shaped, not "better than F." Hence the gating.
+**What we don't know.**
+- How much of the F-vs-A and F-vs-J disagreement is "real" missing-physics signal (FEM-coupled physics has terms — Eckart streaming, ρ(T), c₀(T) — that analytical and j-Wave don't) vs "fake" signal from F's own representational deficit (the 27% Pa magnitude bias from § 1.3 contaminates pairwise comparison).
+- Whether the FNO_combined adversarial-training pitch the project was sold on would actually work given the current F. We did not fire FNO_combined.
 
 ---
 
-## 2. Repeatability & Reliability
+## 2. Repeatability Evidence
 
-The whole pipeline is built from runs that confirm each other (or
-contradict each other) under controlled changes. Here's the evidence.
+### 2.1 What did repeat across independent runs
 
-### 2.1 Smoke → Production prediction track record
+**Three failure modes each observed in ≥2 independent runs:**
+- LR=1e-3 + FEM data → predict-zero collapse at val_h1 = 2.000 exactly. Observed in v3 smoke 446; the LR=1e-4 retry (smoke 469) escaped immediately.
+- LR=1e-4 + DDP gpu=4 + cosine T_max=N_EPOCHS → val_h1 rises mid-training while train_h1 keeps falling. Observed in 520 (8×8×24, peaked at ep14), 566 (per-sample loss, same hyperparams, peaked at ep14), 866 (12×12×36, peaked at ep25).
+- FEM v1/v2 dataset with fixed bed_temp → val_h1 flatline at 4.0 for 50 epochs. Observed in jobs 165 and 362.
 
-| Smoke (gpu=1, BATCH=1, 5 ep) | val@ep5 | Production (gpu=4, BATCH=2, 50 ep) | best val | Smoke prediction direction |
-|---|---|---|---|---|
-| **469** (LR=1e-4, 8×8×24) | 1.09 | **520** (same config, 50ep) | **1.94** | ❌ smoke wildly under-predicted production |
-| **800** (LR=1e-4, 12×12×36) | 0.98 | **866** (same config, 50ep) | **1.80** | ❌ same gap pattern (smoke 0.10 better than 469, production 0.14 better than 520) |
+**Two success modes each observed in ≥2 independent runs:**
+- FNO_J L1 (Phase 7c dataset) trained successfully across smoke (159, val=1.44 ep1), timed-out real (183, val=1.084 ep42), and full real (240, val=1.05 ep50). All three on the same trajectory shape.
+- FNO_A L1 trained successfully across smoke (167, val=1.50 ep5) and full real (205, val=1.19 ep50).
 
-**The smoke-vs-production gap is reproducible.** Both smokes landed
-~0.86-0.82 better than their corresponding production runs. The gap
-comes from **cosine LR schedule with T_max=N_EPOCHS** — at smoke
-(N=5), cosine decays LR to ~zero by ep5, effectively early-stopping;
-at production (N=50), LR stays near initial through ep30+, leaving
-the model in the overfit zone.
+**Deterministic measurement infrastructure.**
+- The disagreement matrix gave A↔J = 1.296 at N=8 and 1.298 at N=32 — different sample subsets, same point estimate to 3 decimal places. The bootstrap CI on N=32 has width 0.006, so the difference between N=8 and N=32 estimates is within bootstrap noise.
 
-**What this proves about reliability.** The pipeline is reliable in
-the sense that **the same recipe gives the same result**. What it's
-NOT reliable for is **extrapolating from smoke to production**. The
-correct smoke-vs-production protocol (saved as a methodology lesson):
-either reproduce the production T_max in the smoke, or run a smoke
-long enough to enter the overfit zone (≥ 20 epochs).
+### 2.2 Smoke→production prediction track record
 
-### 2.2 Multi-run cross-validation of the FAIL modes
+| Smoke (gpu=1, BATCH=1, 5 ep) | val@ep5 | Production (gpu=4, BATCH=2, 50 ep) | best val |
+|---|---|---|---|
+| 469 (LR=1e-4, 8×8×24) | 1.09 | 520 (same config, 50 ep) | 1.94 |
+| 800 (LR=1e-4, 12×12×36) | 0.98 | 866 (same config, 50 ep) | 1.80 |
 
-We saw the same failure pattern reproduce in independent runs:
+In both cases the smoke landed substantially *below* what the production run achieved. The gap was similar in both pairs (~0.85–0.90). The direction of the smoke-to-smoke comparison (800 better than 469 by 0.11) and the direction of the production-to-production comparison (866 better than 520 by 0.14) point the same way.
 
-**Pattern 1: LR=1e-3 + FEM data → predict-zero collapse at val_h1 = 2.000 exactly**
-- Observed in job 446 (v3 smoke). val_h1 = 2.0000 for all 5 epochs to
-  6 decimal places.
-- Diagnosed: cond_mlp output std = 6 (phases are raw radians ∈ [0, 2π],
-  not unit-normalized), gradient explosion at LR=1e-3 collapses FNO to
-  output ≈ 0.
-- Reproducible: switching to LR=1e-4 (job 469) immediately escapes the
-  attractor (val_h1 1.65 → 1.09 in 5 ep).
-- Memory: `fno-lr-collapse.md`
+**One known mechanism** that *would* produce this pattern: the cosine LR schedule has T_max=N_EPOCHS, so at smoke (N=5) the LR decays to eta_min by ep5, while at production (N=50) the LR stays near its initial value through ep30+. We didn't run a controlled experiment to confirm the mechanism — this is a plausible but unverified explanation.
 
-**Pattern 2: LR=1e-4 + DDP + cosine T_max=50 → overfit at ep14**
-- Observed in job 520 (8×8×24): best ep14, val rises ep15+
-- Observed in job 566 (per-sample loss, same hyperparams): best ep14,
-  same overfit pattern
-- Observed in job 866 (12×12×36): best ep25 (later, but still upticks
-  before final descent at ep40+ as LR decays)
-- **Pattern is independent of loss function and mode count** — it's
-  cosine-schedule-specific
-- Memory: `fno-ddp-lr-overfit.md`
+### 2.3 What we did NOT test for repeatability
 
-**Pattern 3: Fixed bed_temp → flatline at val_h1 = 4.0**
-- Observed in job 362 (v2 50ep): flatlined at 4.0 for entire run
-- Observed in initial job 165 (smoke): same flatline
-- Diagnosed: hidden conditioning variable (FEM ρ(T), c₀(T)) makes
-  regression non-functional → optimal predictor is conditional mean
-- Reproducible: every v1/v2 dataset attempt produced this; v3
-  thermal-aware (bed_temp as 121st input) fixed it
-- Memory: `sw43-thermal-aware-fno.md`
+- **No multi-seed validation.** Every model trained with seed=42. The mode-scaling PASS at 866 could in principle be seed-dependent. We don't have evidence either way.
+- **No held-out architectural test.** The PASS gates are computed on the same dataset the model was trained on (different splits within the same data distribution). We don't have a physically different test set (different array geometry, different droplet regime).
+- **No human review of field predictions.** Mid-z slice PNGs in `receipts/` exist; no qualified acoustician has reviewed them systematically. The "FNO_J L1 was undertrained at the chamber interior" finding from 2026-05-15 was based on visual inspection by the project authors, not by a domain reviewer.
 
-### 2.3 Multi-run cross-validation of the SUCCESS modes
+### 2.4 Known limitations
 
-**FNO_J L1 trained successfully across multiple attempts:**
-- Job 159 (smoke): val 1.44 at ep1
-- Job 183 (real, timed out): val 1.084 at ep42
-- Job 240 (real, full): val 1.05 at ep50
-- All three converged similarly — same trajectory shape, similar
-  final-region values
-
-**FNO_A L1 trained successfully:**
-- Job 167 (smoke): val 1.50 at ep5
-- Job 205 (real, full): val 1.19 at ep50
-- Clean training, no surprises
-
-**Disagreement matrix is reproducible at sub-1% level:**
-- N=8 first run: A↔J = 1.296
-- N=32 statistical run: A↔J = 1.298
-- Difference 0.002 (well within bootstrap CI [1.295, 1.301])
-- Bootstrap CI on 1000 resamples gives the same point estimate to 3
-  decimal places — the metric is deterministic given the inputs
-
-### 2.4 What we have NOT verified
-
-Honest acknowledgement of gaps:
-- **No multi-seed run** — every model was trained with seed=42. We
-  don't have evidence the 866 PASS reproduces with seed=43, 44, 45.
-  Memory: this was flagged in `fno-ddp-lr-overfit.md` but not fixed.
-- **No multi-dataset run** — every v3 result is on the 7000-config
-  thermal-aware dataset. We don't have a held-out *physically
-  different* test set (e.g., different array geometry) to check
-  generalization.
-- **No human-in-the-loop validation** — the field predictions look
-  plausible from mid-z slices but no acoustician has reviewed them
-  systematically.
-
-### 2.5 What the repeatability evidence proves overall
-
-- **Failure modes are reproducible** (3 distinct patterns, each
-  observed ≥ 2 independent times) → we know HOW the pipeline fails
-- **Success modes are reproducible** (FNO_J and FNO_A converged
-  similarly in 2-3 independent runs each) → we know the pipeline
-  works under the right conditions
-- **The transition from FAIL to PASS is mechanistically explainable**
-  (each failure has a documented diagnosis with code fix) → not just
-  empirical luck
+1. **Single-seed training.** Every result is one seed.
+2. **N=32 bootstrap.** Tight CIs, but a small sample. Bootstrap CIs measure the bootstrap procedure's uncertainty at a given N; they don't bound the underlying sampling variance with the rigor that larger N would.
+3. **Same-distribution train/test.** All evaluation is within the v3 dataset's distribution.
+4. **No inverse-design loop evaluation.** The pitch is "real-time inverse design" but we only validated forward surrogates. Whether the surrogates are good enough for autodiff-through-the-model inverse design is untested in this submission.
+5. **No deployment-readiness evaluation.** Model inference latency was measured; OOD behavior, monitoring, fallback paths are not addressed.
+6. **No FNO_combined or student-from-combined.** The disagreement-weighted combine + distill steps the project was sold on were not executed. Disagreement matrix evidence (§ 1.4) is consistent with that decision but the *combined* model itself was never trained.
+7. **AI-saturated content production.** The volume of documentation and prose was generated heavily by an AI coding assistant. AI-vs-human contribution split documented in README § Author contributions; verifying which intellectual decisions were human-original is left to the reader.
 
 ---
 
-## 3. Pipeline-Wide Patterns — What the Training Tells Us About the Problem
+## 3. Observations About the Whole Training Arc
 
-### 3.1 Architecture capacity matters more than training schedule (within reason)
+These are patterns observed across the run set. They are observations, not conclusions.
 
-The full v3 sweep (446, 469, 520, 565, 566, 603, 800, 866) burned
-~80 GPU-hr exploring loss formulation (--per-sample vs default),
-learning rate (1e-3 vs 1e-4 vs 5e-5), and batch size (effective 1 to
-effective 8). None of these produced 866's improvement. **The single
-change that produced the PASS was going from 8×8×24 modes to
-12×12×36 modes** (commit `33b62b9` exposing the sbatch knobs).
+### 3.1 The single change that produced the FNO_F PASS
 
-This is a strong signal that for cylindrical FEM-coupled acoustic
-fields, **the binding bottleneck is representational capacity, not
-optimization quality**. This is consistent with the truncation-ceiling
-diagnostic (8×8×24 modes can only represent 17% of target signal at
-the architectural level), even though that diagnostic was a loose
-upper bound.
+We ran ~9 training jobs in the v3 thermal-aware arc varying loss (default H¹ vs per-sample H¹), LR (1e-3, 1e-4, 5e-5), and batch (BATCH=1 single-GPU vs BATCH=2 DDP-gpu=4). None of these alone produced a mean_pred PASS. The transition from FAIL to PASS coincided with the mode-count change (8×8×24 → 12×12×36 in commit `33b62b9`).
 
-### 3.2 Random-phase forward training is fundamentally limited for inverse-design evaluation
+We do not know whether the architectural change is the *cause* or whether it co-occurred with a more favorable optimization trajectory enabled by the larger parameter count. Distinguishing those would require running 866-modes-but-smaller-hidden or 866-modes-but-shorter-training comparisons we didn't run.
 
-**Discovery during round-2 deep eval.** When we ran the
-`focal_zone_signal_quality` gate on v3 thermal-aware, E_focal came
-back at ~0. Initially read as "model learned wall-only structure,
-ignored interior." But sampling 100 random training-set TARGETS
-showed median E_focal = 0.003 — **less than the uniform-distribution
-baseline of 0.0395**. The targets themselves have basically no focal-
-zone energy.
+### 3.2 Forward training on random phases doesn't probe focal-zone behavior
 
-**Why physically.** Random transducer phases produce diffuse
-interference patterns. Focal points only emerge under *focused*
-(inverse-designed) phases. Our forward training set is sampled with
-uniform-random phases — those create wall-dominated diffuse fields by
-physics, not bug.
+Sampled 100 random targets from the v3 dataset: median E_focal = 0.003 (vs uniform-distribution baseline 0.0395). The targets themselves put almost no energy in the focal zone when transducer phases are randomly sampled.
 
-**Implication for the project.** The forward-surrogate evaluation
-metrics (mean_pred, val_h1) don't directly probe inverse-design
-quality. A model that perfectly reproduces "wall-dominated diffuse
-fields for random phases" can still fail at inverse design (because
-the inverse loop needs accurate behavior on FOCUSED phases, which are
-out of distribution). **The disagreement framework is the bridge**: it
-identifies regions where the surrogates disagree most, which empirically
-correlates with focal regions (where small phase perturbations create
-large field changes). FNO_combined would weight those regions more
-heavily during teacher training — but only if F's disagreement is
-trustworthy, which it isn't yet (per § 1.4).
+This means: the `focal_zone_signal_quality` gate that was added in 2026-05-15 (to catch the Phase 7c v1 false-positive PASS) **does not apply** to forward surrogates evaluated on random-phase splits. We had a brief period during the v3 deep-eval when we read E_focal ≈ 0 as failure; the targets themselves have E_focal ≈ 0, so the model matching that is correct behavior on this evaluation.
 
-### 3.3 The DDP cosine-LR overfit is a real systematic effect, not bad luck
+The implication is that **forward surrogates trained on random phases cannot be evaluated for inverse-design quality using the focal-zone gate.** The appropriate inverse-design evaluation would run the autodiff-through-the-model inverse loop and check the resulting field — we did not do this.
 
-Three independent runs (520, 566, 866) all show val_h1 dropping until
-ep14, then rising 5-10 epochs while train_h1 keeps dropping, then
-val_h1 recovering as cosine LR decays through ep30+. This is the
-exact shape predicted by:
+### 3.3 Systematic magnitude bias persisted across both 8×8×24 and 12×12×36 architectures
 
-1. Effective batch size = BATCH × N_GPU = 2 × 4 = 8 (vs smoke's 1)
-2. Cosine schedule decay rate is set by N_EPOCHS (T_max=50 means LR
-   only drops to half its peak by ep17)
-3. The model has enough capacity to start fitting noise at ep14 when
-   LR is still ~70% of peak
+Both 520 and 866 systematically under-predict Pa magnitude. 520 by 51% on average, 866 by 27% on average. The per-sample random standard deviation is small (1.3% for 520, 0.7% for 866), so the prediction is *tightly clustered around a biased mean*.
 
-For a single-GPU smoke (eff batch=1, T_max=5), the cosine decays LR to
-~zero by ep5, which functions as built-in early stopping — the model
-never enters the overfit zone. **The smoke result is therefore not
-predictive of production behavior on this specific axis.**
+The bias dropped roughly in half going from 118M params (520) to 264M params (866) — a 2.2× parameter increase. We don't know if the trend would continue with more parameters, whether it's an artifact of the H¹ loss landscape, or whether it's a data-normalization bug. We did not isolate.
 
-**Methodological transfer.** For any future DDP FNO training, either:
-(a) Use T_max < N_EPOCHS (e.g., T_max=20 with hold at eta_min for
-remaining 30 epochs), or
-(b) Add explicit early-stopping with patience N=5, or
-(c) Reduce effective batch via gradient-accumulation in the smoke so
-the smoke matches production dynamics.
+### 3.4 What the run set is and isn't
 
-We did none of these for 866 (it ran with default cosine T_max=50)
-and the model still recovered — but this was likely lucky. **For a
-robust pipeline, change (a) is recommended for the next FNO_F run.**
+The 30+ training jobs in this project span variation along 8 axes: dataset version (v1/v2/v2.5/v3), modes, hidden channels, layers, LR, schedule, batch, loss. Most jobs vary multiple axes simultaneously — they were exploratory, run to make progress on a specific failure, not to ablate.
 
-### 3.4 Systematic magnitude bias is reproducible across model sizes
-
-Both 520 (−51% bias) and 866 (−27% bias) systematically under-predict
-Pa magnitude. The bias scales inversely with model size:
-- 8×8×24 modes (118M params): −51% bias
-- 12×12×36 modes (264M params): −27% bias
-- Ratio: model size × 2.2× → bias × 0.53 (i.e., halved)
-
-If this trend held, doubling model size again (16×16×48 modes, ~600M)
-would give a ~14% bias. But this is extrapolation; the trend may not
-hold past a certain capacity (the smoke 974 + 975 tests for this).
-
-**Physical reason.** The H¹ loss is partially scale-invariant in its
-gradient term. Smaller models find local minima at scales the H¹ loss
-can't fully constrain; bigger models have more parameters to fit the
-absolute scale via the L² term. **The fundamental fix isn't bigger
-models forever — it's an L² loss weighting that breaks the scale
-invariance** (e.g., add an explicit magnitude-matching term, or a
-learned output rescaling head trained on a small calibration set).
-
-### 3.5 The full project is a 30+ data-point ablation of one architectural family
-
-We've effectively run a massive (uncontrolled) ablation:
-
-| Variable | Tested values | What we learned |
-|---|---|---|
-| Forward physics | Analytical, j-Wave, FEM-coupled | Each track captures different components; disagreement matrix calibrates them |
-| Grid resolution | 32³ → 44×44×144 → 56×56×160 | Lower-res cubic was easier (PASS); higher-res cylindrical is harder |
-| Bed temperature | Fixed 800K → random [400, 1000] K | Hidden conditioning kills FNO if not exposed; exposing fixed it (v1/v2 → v3) |
-| Fourier modes | 8×8×24, 12×12×36 | More modes → mean_pred PASS, biggest single lever |
-| Hidden channels | 128 (default), 192 (smoke 975) | Smoke pending; will inform whether channels are an orthogonal lever |
-| Loss | H¹ default, per-sample H¹ | Per-sample didn't help on the v3 overfit problem |
-| LR | 1e-3, 1e-4, 5e-5 | 1e-3 collapses; 1e-4 overfits at ep14 (DDP); 5e-5 plateaus higher |
-| Effective batch | 1 (smoke), 8 (DDP) | Smaller effective batch + faster cosine = better at smoke scale |
-| Prior (residual vs not) | Residual=False everywhere | Not tested — might be a lever |
-| Cosine T_max | =N_EPOCHS (default) | Causes mid-training overfit at production scale |
-
-**What the table says about the problem.** Cylindrical FEM-coupled
-Helmholtz with thermal coupling at 56×56×160 resolution sits at an
-*interesting* point in the FNO capability frontier: 118M-param FNOs
-fail, 264M-param FNOs barely PASS the basic gate. The problem is
-in the "moderately hard" category — much harder than the cubic
-free-field benchmarks the FNO literature usually reports on, easier
-than turbulent CFD where FNOs have struggled. This is genuinely
-useful empirical knowledge for anyone considering FNOs for similar
-PDE-control problems.
-
-### 3.6 Why this project matters as a methodology contribution
-
-Beyond the specific FNO_F PASS, the pipeline contributes:
-
-1. **The two-gate evaluation pattern** (`mean_pred_sanity` → `focal_zone_signal_quality`)
-   was added in response to the Phase 7c v1 false-positive PASS.
-   Future FNO acoustic projects should run both — one gate alone misses
-   wall-dominated learning.
-
-2. **The truncation-ceiling diagnostic** (project target onto truncated
-   Fourier basis, measure rel L²) gives a loose upper bound on
-   representational capacity in 10 minutes of compute. Always run it
-   before scaling training. (Noting it's a *loose* bound — see post-
-   mortem in README.)
-
-3. **The disagreement-framework calibration** (noise floor + regime
-   divergence, separated by ~400× in our case) gives a *quantitative
-   threshold* for when combining surrogates is justified. Most ensemble
-   methods don't do this calibration; they assume disagreement = signal.
-
-4. **Per-failure-mode memory** that survives across sessions. The 8
-   reproducible failure modes documented as memory files
-   (`fno-lr-collapse.md`, `fno-ddp-lr-overfit.md`, etc.) are the
-   reusable artifact for anyone (human or agent) doing similar work.
+Calling this an "ablation study" overstates the experimental design. It is an *exploration* whose net effect was to produce three trained surrogates (A, J, F) and a documented set of failure modes. The honest framing of the contribution is empirical engineering on the problem class, not a controlled experimental study.
 
 ---
 
-## TL;DR of this doc
+## What we'd want to do next (for Drip's longer-term planning)
 
-- Each metric we report has a **causal chain** behind its value, not
-  just an empirical observation.
-- **mean_pred PASS** for 866 is real (statistically significant in
-  32/32 paired samples, CI [0.238, 0.241]), but mostly explained by
-  optimization-dynamics escape, not just architectural capacity.
-- **val_h1 understates the improvement** because the H¹ gradient term
-  is dominated by high-frequencies both models miss equally.
-- **Pa magnitude error** is a CALIBRATION problem (~38× more
-  systematic than random), addressable by output-rescaling not by
-  more training.
-- **A↔J = 1.30** is structurally meaningful (regime divergence) and
-  reproducible to 3 decimal places.
-- **F-row in the matrix** is dominated by representational deficit
-  (F's magnitude calibration), gating FNO_combined.
-- **Failure modes are reproducible** (LR collapse, DDP overfit,
-  fixed-bed-temp flatline all observed multiple independent times).
-- **Success modes are reproducible** (FNO_J and FNO_A converged
-  similarly across 2-3 independent runs each).
-- **Smoke results don't predict production** under default cosine-LR
-  schedule — this is a methodology lesson worth flagging.
-- The full sweep is effectively a 30+ data-point uncontrolled ablation
-  of FNO capability on the cylindrical-multi-physics-acoustic problem
-  class; the project's biggest contribution may be **the methodological
-  lessons it generated**, not the specific surrogate weights.
+To convert the current empirical observations into things we'd defend with confidence, the experiments worth running are:
+
+1. **Multi-seed validation of 866's PASS.** Three more runs with seed=43, 44, 45. ~12 GPU-hr each = ~36 GPU-hr. Would tell us whether the PASS is robust or seed-lucky.
+2. **L²-only loss variant of 866.** One additional production run with L² only (no H¹). Tests whether the systematic magnitude bias comes from the H¹ loss landscape (would expect bias to shrink if so).
+3. **Held-out test on different array geometry.** Generate a small dataset with a different transducer-positioning (e.g., 12-ring vs 10-ring), evaluate FNO_F there. Tests generalization.
+4. **Inverse-design loop evaluation.** Run the autodiff-through-FNO_F inverse loop on 10 target trajectories, check the resulting fields. Whether the surrogate is good enough for inverse design is unknown until this is done.
+5. **Output-rescaling head.** Train a small calibration head on the systematic magnitude bias. If it closes the bias without breaking structure, our predicted Pa magnitudes become deployment-grade.
+
+If any of these come back negative, the surrogate is less ready than the current docs suggest. If they come back positive, we have strong evidence to fire FNO_combined and the student-v2 distillation. **Either outcome is more useful than continuing to polish the current docs.**
