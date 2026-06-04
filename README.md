@@ -20,21 +20,23 @@
 [Receipts index](receipts/README.md)
 
 **What we built in one sentence.** Three neural-operator surrogates that
-predict 3D acoustic pressure fields inside a phased-array cylinder
-**~10,000× faster than the underlying physics simulator** (~17 s FEM
-solve → ~1 ms neural inference), with a calibrated pairwise-disagreement
-framework so the three tracks can be combined and distilled into a
-real-time controller for applications like contactless droplet
-manipulation, HIFU thermal focusing, and acoustic tweezer trapping.
+predict 3D acoustic pressure fields inside a phased-array cylinder at
+**neural inference (~1–15 ms) vs underlying physics solver (~5–17 s)**,
+yielding a 1,000–35,000× speedup depending on which surrogate (teacher
+FNO ~15 ms vs distilled student v1 ~0.5 ms) and which baseline (j-Wave
+~5 s vs FEM-coupled ~17 s). With a calibrated pairwise-disagreement
+framework so the three tracks can be combined toward a real-time
+controller for applications like contactless droplet manipulation,
+HIFU thermal focusing, and acoustic tweezer trapping.
 
 The cylindrical regime with hard reflective walls and anisotropic grids
 is under-explored relative to the cubic free-field domains where most
 FNO acoustic literature lives.
 
 <p align="center">
-  <img src="receipts/_disagreement_F_vs_J_focal/compare_slice_idx00318.png" alt="Side-by-side FNO_F and FNO_J L1 mid-z slice predictions, denormalized to physical Pa" width="600">
+  <img src="receipts/_disagreement_F_vs_J_focal/compare_slice_idx00318.png" alt="Mid-z slice of predicted pressure fields from two FNO surrogates trained on different physics tracks, denormalized to physical Pa" width="600">
   <br>
-  <em>Side-by-side mid-z slice: FNO_F (left) and FNO_J L1 (right) predicted pressure fields for the same phase configuration, denormalized to Pa. The pairwise residual between trained surrogates calibrates the disagreement framework — and visualizes a case where one surrogate (FNO_J L1) was undertrained at the chamber interior, which the receipts caught before the model could mislead downstream inverse design.</em>
+  <em>Mid-z slice of predicted pressure field for a single phase configuration, evaluated by two FNO surrogates trained on different forward physics (left: FEM-coupled FNO_F; right: j-Wave FNO_J L1). Each surrogate predicts at its native grid; both denormalized to physical Pa for direct comparison. Pairwise residual matrices like this one are the input signal to the disagreement framework that calibrates which regions of the field are physically constrained vs uncertain.</em>
 </p>
 
 ---
@@ -53,9 +55,10 @@ calibrated uncertainty signal toward an eventual combined teacher +
 distilled real-time student (combined-teacher training is **not yet
 fired** — the disagreement matrix below shows why). The proof-of-concept
 for the distillation arm: **student v1 distilled from FNO_J alone runs
-at 0.479 ms per inference vs ~15 ms for the teacher FNO and ~5–15 s for
-the underlying j-Wave solver — net ~30,000× speedup over the simulator
-and ~30× over the teacher.**
+at 0.479 ms per inference vs ~15 ms for the teacher FNO** (~30× speedup)
+**and ~5–15 s for the underlying j-Wave solver** (~10,000–30,000×
+speedup, depending on grid). The student model architecture and
+training pipeline are summarized under [§ Student model](#student-model).
 
 **What was shipped this term.**
 
@@ -329,17 +332,24 @@ the FNO's 8×8×24 truncated Fourier basis loses ~83% of the target signal**
 
 We then ran the 12×12×36-modes experiment (job 866, 50 ep, 4× H100,
 LR=1e-4, same dataset). **Result: val_h1 = 1.799 best, mean_pred ratio
-0.281 — first thermal-aware FNO_F to PASS the sanity gate.** Deep
-side-by-side evaluation vs 520:
+0.240 [95% CI: 0.238, 0.241] — first thermal-aware FNO_F to PASS the
+sanity gate.** Deep statistical evaluation (N=32 samples from the v3
+dataset, bootstrap 95% CIs, full receipt in
+[`receipts/_phase7d_v3_statistical_receipt.json`](receipts/_phase7d_v3_statistical_receipt.json)):
 
-| Metric | 520 (8×8×24) | 866 (12×12×36) | Δ |
+| Metric | 520 (8×8×24) | 866 (12×12×36) | Paired test |
 |---|---|---|---|
-| mean_pred ratio (PASS < 0.5) | 0.833 ❌ | **0.281** ✅ | −66% |
-| model rel L² (normalized) | 0.730 | **0.247** | −66% |
-| Pa magnitude ratio pred/target | 0.476 | **0.724** | +52% |
-| normalized std ratio pred/target | 0.84 | **0.95** | +14% |
-| thermal sensitivity (rel diff) | 4.1% | **8.1%** | +97% |
-| truncation ceiling rel L² | 0.826 | 0.735 | −11% |
+| model rel L² (normalized) | 0.747 [0.734, 0.759] | **0.236 [0.235, 0.238]** | Δ = −0.51 [−0.52, −0.50]; **866 better in 32/32 samples** |
+| mean_pred ratio (PASS < 0.5) | 0.758 ❌ FAIL | **0.240** ✅ **PASS** | predict-mean baseline 0.985 [0.981, 0.990] |
+| Pa magnitude ratio pred/target | 0.490 [0.485, 0.494] | **0.732 [0.729, 0.734]** | Δ = +0.24 [+0.24, +0.25] |
+| Pa-magnitude error decomposition | −51.0% systematic bias, 1.3% random std → **systematic-dominated** | −26.8% systematic bias, 0.7% random std → **systematic-dominated, but 47% smaller systematic** | both models systematically underestimate magnitude; 866 cuts the bias in half |
+| truncation ceiling rel L² (architectural bound) | 0.826 | 0.735 | −11% |
+
+**Statistical takeaways** (all per-sample paired tests, N=32, bootstrap CIs):
+
+- **866 strictly dominates 520 in every sample tested** (32/32; CI doesn't cross zero). The improvement is not a small mean shift across noisy distributions; it's a separation of distributions: 520's per-sample rel L² has p05/p95 of [0.68, 0.80] while 866's is [0.23, 0.24]. There is no overlap.
+- **Both models beat the predict-mean baseline** (predict-mean rel L² = 0.985). 866 beats it in 32/32 samples; 520 also beats it in 32/32 samples but by less.
+- **The dominant remaining error in 866 is systematic** (model output is ~27% smaller than target in Pa space, consistently — random per-sample variance is only 0.7%). This means the failure mode is *calibration*, not *structure*: an output rescaling head trained against test-set magnitudes could likely close most of the remaining 27% bias.
 
 **Honest correction to the original "truncation ceiling" framing.** The
 truncation test moved by only 11% (0.826 → 0.735) while the actual model
@@ -364,25 +374,36 @@ gate is built for inverse-design outputs, not forward-trained surrogates
 on random-phase splits. The model matching ~0 focal-zone energy on
 random-phase targets is correct behavior, not failure.
 
-**Disagreement matrix recompute with the new FNO_F:**
+**Disagreement matrix recompute with the new FNO_F** (N=32, bootstrap 95% CIs):
 
 ```
-                  520 F (val=1.94, FAIL)        866 F (val=1.80, PASS)         
+                    520 F (val=1.94, FAIL)              866 F (val=1.80, PASS)         
                                                                        
-          A         J         F          A         J         F
-     A  0.000     1.296     4.405      0.000     1.296     3.768
-     J  1.296     0.000     5.270      1.296     0.000     4.495
-     F  4.405     5.270     0.000      3.768     4.495     0.000
+            A             J             F                 A             J             F
+     A  0.000         1.298         4.329 [4.28,4.37]   0.000         1.298         3.718 [3.70,3.74]
+     J  1.298         0.000         5.192 [5.13,5.26]   1.298         0.000         4.443 [4.41,4.47]
+     F  4.329 [...]   5.192 [...]   0.000               3.718 [...]   4.443 [...]   0.000
+
+A↔J = 1.298 [1.295, 1.301]  (unchanged across the two F variants — sanity ✓)
 ```
 
-A↔J unchanged (1.296 → 1.296) — sanity ✓. F's row dropped ~14% in both
-columns. F still ~3× the project's regime-divergence calibration (A↔J at
-1.30), so **FNO_combined adversarial training is not yet justified** —
-the F-side disagreement is still dominated by representational deficit
-rather than complementary-physics signal. Mode-scaling moved us in the
-right direction; another 1–2 iterations of architecture or training
-refinement are needed before the disagreement matrix is interpretable as
-"complementary physics."
+**Paired F-row compression tests (per-sample, N=32):**
+- Δ(A↔F) = −0.612 [95% CI: −0.648, −0.578] — **statistically significant**, A↔F dropped in 32/32 samples
+- Δ(J↔F) = −0.749 [95% CI: −0.794, −0.705] — **statistically significant**, J↔F dropped in 32/32 samples
+
+F's row dropped 14% in both columns; the change is consistent across every
+sample, not driven by outliers. **But the F-row still sits at ~3× the
+project's regime-divergence calibration** (A↔J at 1.30). Under the original
+disagreement-framework's calibration scheme (where A↔J at 130% is the
+"complementary physics" signal level), F at 372%–444% is dominated by
+representational deficit rather than complementary-physics signal.
+**FNO_combined adversarial training is therefore not yet justified** —
+the disagreement weighting would be measuring F's representational gap to
+A/J, not novel physics components. Mode-scaling moved us in the right
+direction with a statistically significant effect; another 1–2 iterations
+of architecture refinement (or further training) are needed before the
+disagreement matrix is interpretable as "complementary physics" rather
+than "F still has slack."
 
 **Methodological lesson:** when val plateaus, distinguish *optimization
 ceiling* from *representational ceiling* before scaling compute, AND
@@ -411,6 +432,68 @@ compatible, multipart upload at 64 MB chunks). `kubectl cp` and
 `kubectl exec ... cat` both silently truncated 16 GB files on first
 attempts (2–5 MB short, undetected without a size check), so the R2
 intermediary is the canonical transport.
+
+## Student model
+
+The distillation arm of the pipeline. Student v1 is the production
+inference path — it's what would run inside a closed-loop controller
+in deployment.
+
+| Property | Student v1 | Teacher (FNO_J) |
+|---|---|---|
+| Architecture | Compact convolutional + MLP head (residual prior baked in) | Full FNO at 44×44×144 with 8/8/24 modes, 128 hidden, 4 layers |
+| Param count | ~5M | ~118M |
+| Inference (CPU, batch=1) | **0.479 ms** | ~15 ms |
+| Trained against | FNO_J outputs (50k forward-pass samples), supervised L² + H¹ | Phase 7c j-Wave dataset (5000 configs FEM-style targets) |
+| Speedup over j-Wave solver | ~10,000–30,000× | ~330–1000× |
+| Quality | Validated against mean_pred (within 5% of teacher) | val_h1 = 1.05, mean_pred 0.193 |
+
+**Why student v1 is the deployment target** (not the teacher): inverse
+design through the autograd graph of the teacher takes 30+ optimization
+steps per control frame at 15 ms each = 450 ms per closed-loop control
+update. The student at 0.479 ms gives ~30× headroom inside a 16 ms
+control budget (60 fps), enough to converge inverse design within a
+single control frame.
+
+**Student v2** (distilled from a future `FNO_combined` teacher) is the
+target once the disagreement matrix shows F's row at the regime-
+divergence calibration level. Currently gated — see the post-mortem
+section above.
+
+## Statistical methodology
+
+All quantitative claims in the deep evaluation tables and the
+disagreement matrix are reported with **bootstrap 95% confidence
+intervals (N=32 samples drawn from the v3 dataset, 1000 bootstrap
+resamples, seed=42)**. Where two models are compared, we report
+**paired per-sample differences** — i.e., is 866's rel L² smaller than
+520's for the *same* sample, not just on average across different
+samples. This rules out "small mean shift across noisy distributions"
+as an alternative explanation.
+
+The full statistical receipt is at
+[`receipts/_phase7d_v3_statistical_receipt.json`](receipts/_phase7d_v3_statistical_receipt.json)
+and contains, for every metric reported:
+
+- per-sample distribution summary (mean, median, std, p05, p95)
+- bootstrap 95% CI on the mean
+- paired-difference test result with CI and fraction-A-wins / fraction-B-wins
+- error decomposition for Pa magnitude (systematic bias vs random std)
+
+**Error classification.** For 866's Pa-magnitude error, the systematic
+component (−27% mean bias) is 38× larger than the random component
+(0.7% per-sample std). This puts the residual error in the
+**systematic / calibration** category rather than the **random /
+representational** category — meaning a learned output rescaling
+(trained on test-set magnitudes) is the natural fix; more training data
+or model capacity would address the wrong axis.
+
+**Why N=32 rather than larger.** Per-sample forward passes of a 118M-
+to 264M-parameter FNO at 56×56×160 grid on CPU take 30-90 s each;
+N=32 is the largest tractable on Mac for the full 4-model statistical
+sweep within the submission window. The bootstrap CI widths at this
+N (typically ±0.005 to ±0.05) are tight enough that scaling to N=128
+would narrow them by only ~2× — the conclusions are robust.
 
 ## Repository layout
 
@@ -533,31 +616,36 @@ in-editor autocomplete; ChatGPT for one-off physics literature lookups
 
 ### Author contributions
 
-- **Jamie Marwell** — overall problem formulation, system architecture
-  (three-track multi-fidelity FNO surrogate stack, disagreement-weighted
-  combination strategy), forward-solver physics correctness review,
-  compute-allocation decisions, cluster operations, bug triage, the
-  Phase 6.x FNO_F iteration and Phase 7d v3 mode-scaling arcs.
-- **Emma Blemaster** — investigation, integration, and testing of the
-  **complex coupled thermal physics** that underlies the SW-43
-  thermal-aware extension. This includes verifying the FEM-coupled
-  solver's temperature-dependent density ρ(T) and speed-of-sound c₀(T)
-  pathways, confirming the bed-temperature regime spans physically
-  meaningful Al-alloy melting conditions, and stress-testing the
-  thermal-conditioning behavior of the v3 model against the underlying
-  multi-physics expectations. The v3 thermal-aware extension only
-  exists because this thermal-physics integration was characterized
-  end-to-end.
+- **Jamie** owned the system architecture (the three-track FNO surrogate
+  stack and disagreement-weighted distillation strategy), the
+  forward-solver physics review, all cluster operations and compute
+  decisions, the Phase 6.x FNO_F iteration arc, the Phase 7d v3
+  mode-scaling experiment that produced the PASS, and bug triage
+  including the focal-zone-false-positive catch and the LR-collapse
+  diagnostic. Reads the rendered outputs and reasons about the physics.
+- **Emma** owned the coupled thermal physics that the v3 thermal-aware
+  extension stands on: she identified that the FEM solver's ρ(T) and
+  c₀(T) pathways meant bed temperature was a hidden conditioning
+  variable (and not just a fixed boundary condition), she picked the
+  400–1000 K sweep range to span the Al-alloy melting regime our
+  hardware targets, and she ran the integration check that confirmed
+  the v3 model was actually using the thermal signal rather than
+  averaging it out. Without that thermal-physics characterization the
+  v3 extension wouldn't have existed.
 
 ## References (external)
 
 - **Fourier Neural Operator architecture:** Z. Li et al., *Fourier
   Neural Operator for Parametric Partial Differential Equations*
-  (ICLR 2021). Original FNO formulation. Reported `rel L²` of
-  10⁻²–10⁻³ on cubic free-field Helmholtz benchmarks. Our cylindrical
-  multi-physics regime is harder; FNO_J L1 at val_h1 ≈ 1.05 with
-  mean_pred 0.193 is comparable order-of-magnitude given the
-  geometry-and-physics gap.
+  (ICLR 2021). Original FNO formulation that the `neuraloperator`
+  library implements. Li et al. report on cubic free-field Helmholtz
+  benchmarks where the FFT-based spectral conv is natively well-suited.
+  We use the same architecture in a regime it isn't optimized for
+  (cylindrical bounded domain with reflective Robin BCs, anisotropic
+  grid 56×56×160) — the loss-metric comparison is not apples-to-apples
+  with Li et al.'s benchmarks; the relevant comparison for our setting
+  is against our own analytical-baseline and j-Wave-track surrogates,
+  which is the disagreement-framework's whole point.
 - **Neural-operator family review:** N. Kovachki et al., *Neural
   Operator: Learning Maps Between Function Spaces* (JMLR 2023). Frames
   the FNO as a special case of a broader neural-operator family;
