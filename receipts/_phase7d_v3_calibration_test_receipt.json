@@ -1,0 +1,29 @@
+{
+  "ckpt": "/tmp/v3_866_eval/fno_surrogate_fem_phase7d_v3_thermal_aware_modes12_12_36.pt",
+  "method": "global + per-channel + per-sample-oracle calibration",
+  "n_train": 16,
+  "n_test": 8,
+  "seed": 7,
+  "uncalibrated": {
+    "rel_l2": 0.23697710037231445,
+    "pa_magnitude_ratio": 0.7314479947090149
+  },
+  "approach_A_global": {
+    "scale": 1.007118821144104,
+    "test_rel_l2": 0.23688682913780212,
+    "test_pa_magnitude_ratio": 0.7366551160812378
+  },
+  "approach_B_per_channel": {
+    "scales": [
+      1.0064880847930908,
+      1.007771611213684
+    ],
+    "test_rel_l2": 0.23688143491744995,
+    "test_pa_magnitude_ratio": 0.7366585731506348
+  },
+  "approach_C_per_sample_oracle": {
+    "per_sample_scales_mean": 1.0068232268095016,
+    "per_sample_scales_std": 0.002774474310794688,
+    "test_rel_l2_oracle": 0.23687118291854858
+  }
+}

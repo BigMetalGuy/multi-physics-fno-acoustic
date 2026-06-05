@@ -43,18 +43,28 @@ All numbers from N=32 samples of the v3 dataset, bootstrap 95% CI (1000 resample
 - Why val_h1 moved much less than rel L². One possible reason is that val_h1 includes a gradient term (`||∇pred - ∇target||²`) that emphasizes high-frequency content both models may still miss equally — but we didn't separately measure the L² and gradient components of the val_h1, so this is conjecture.
 - Whether val_h1 at ~1.8 is "good" for this problem class. We don't have an external benchmark for cylindrical FEM-coupled Helmholtz at this resolution.
 
-### 1.3 `Pa magnitude ratio` — output calibration
+### 1.3 `Pa magnitude` — what the metric actually says
 
-| Model | pred Pa / target Pa | 95% CI | systematic bias | random std |
-|---|---|---|---|---|
-| 520 | 0.490 | [0.485, 0.494] | −51.0% | 1.27% |
-| 866 | 0.732 | [0.729, 0.734] | −26.8% | 0.70% |
+| Model | pred Pa.abs.mean / target Pa.abs.mean | 95% CI |
+|---|---|---|
+| 520 | 0.490 | [0.485, 0.494] |
+| 866 | 0.732 | [0.729, 0.734] |
 
-**What we measured.** Both models systematically under-predict Pa magnitude. For 866 the systematic bias is 38× larger than the per-sample random standard deviation.
+**What we measured.** Both models have lower mean-absolute Pa output than targets. An earlier version of this doc framed this as "27% systematic magnitude bias addressable via output rescaling" and pointed to the L²-vs-random-std ratio as evidence. That framing was wrong, as a follow-on calibration-head experiment showed.
+
+**The calibration-head test** (see [`../receipts/_phase7d_v3_calibration_test_receipt.json`](../receipts/_phase7d_v3_calibration_test_receipt.json) for the receipt). On 16 train + 8 test held-out samples:
+- Global scalar rescaling: L²-optimal scale = 1.007 → 0.0% improvement in rel L²
+- Per-channel (Re/Im) scalars: same (1.0065 / 1.0078) → 0.0% improvement
+- Per-sample oracle scalars (an upper bound on what any rescaling could do): mean 1.0068, std 0.0028 → 0.0% improvement
+
+**What this means.** The 73% mean-abs-val ratio is *not* a global magnitude scaling problem. Rescaling pred by any factor (global, per-channel, per-sample) doesn't reduce model rel L². The model's output L² norm is essentially correctly scaled (optimal multiplier 1.007 ≈ 1.0); the lower mean-abs-val comes from the model producing **structurally smoother fields** — peaks aren't as high, troughs aren't as deep, but the overall variance is preserved.
+
+**For Drip's use case** (steering droplets through focal zones), this is a non-trivial finding: the sharp peaks in the true field are the focal zones the array steers droplets to; a smoothed prediction means the inverse-design loop sees soft focus instead of sharp focus, which could perturb the gradients toward target trajectories. **Whether this matters in practice has not been validated** — would need an inverse-design loop evaluation.
 
 **What we don't know.**
-- The mechanism. The H¹ loss has different scale sensitivities for its L² and gradient terms, which *could* produce systematic-bias floors at imperfect scales, but we haven't tested this — e.g., we haven't trained an L²-only version of 866 to see if the bias changes. The mechanism explanation is speculation, not measurement.
-- Whether the systematic bias would survive a learned output-rescaling head. That fix is plausible (because the per-sample random std is small relative to the bias) but untested.
+- The mechanism. One hypothesis: the H¹ gradient term in the loss is partially insensitive to peak amplitude (the gradient `∇P` cares about *spatial change rate* more than *peak height* for a given shape), which could systematically smooth FNO output. We haven't tested this.
+- Whether more Fourier modes alone fixes this. 1060 (20×20×60 modes) is the next data point.
+- Whether a different architecture (FNO + CNN head, or sharp-peak-targeted loss) would close the structural-smoothness gap better than just more modes.
 
 ### 1.4 Disagreement matrix — pairwise rel L² in physical Pa
 

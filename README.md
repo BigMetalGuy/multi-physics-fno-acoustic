@@ -364,15 +364,30 @@ bootstrap 95% CIs, full receipt in
 | model rel L² (normalized) | 0.747 [0.734, 0.759] | 0.236 [0.235, 0.238] | Δ = −0.51 [−0.52, −0.50]; 866 better in 32/32 samples |
 | mean_pred ratio (PASS < 0.5) | 0.758 FAIL | 0.240 PASS | predict-mean baseline 0.985 [0.981, 0.990] |
 | Pa magnitude ratio pred/target | 0.490 [0.485, 0.494] | 0.732 [0.729, 0.734] | Δ = +0.24 [+0.24, +0.25] |
-| Pa-magnitude error decomposition | −51% systematic bias, 1.3% random std | −27% systematic bias, 0.7% random std | both systematic-dominated; 866 bias 47% smaller |
+| Pa.abs.mean ratio pred/target | 0.49 (was framed as "−51% systematic bias") | 0.73 (was framed as "−27% systematic bias") | see correction note below |
 | truncation ceiling rel L² (loose upper bound) | 0.826 | 0.735 | −11% |
 
 **What the data shows.** 866 is measurably better than 520 on every
 metric on every sample in this evaluation. The improvement is not a
 small mean shift across noisy distributions — distributions don't
 overlap (520 per-sample rel L² range [0.68, 0.80] vs 866 [0.23, 0.24]).
-Both models systematically under-predict Pa magnitude (520 by 51%, 866
-by 27%); the bias is large relative to per-sample random variance.
+
+**Correction to an earlier framing.** An earlier version of this
+README and `docs/METRICS_AND_TRENDS.md` described the Pa.abs.mean
+ratios (0.49 for 520, 0.73 for 866) as "systematic magnitude bias"
+and suggested a learned rescaling head would close it. A follow-on
+calibration-head test
+([receipt](receipts/_phase7d_v3_calibration_test_receipt.json))
+disproved this: the L²-optimal global rescaling factor for 866's
+output is 1.007 (essentially 1.0), and per-sample-optimal scalars
+have std 0.0028 (tight around 1.007). Rescaling by any factor
+reduces rel L² by 0.0%. **The lower Pa.abs.mean ratio comes from the
+model producing structurally smoother fields, not from uniform
+under-prediction.** Peaks aren't as high, troughs aren't as deep,
+overall variance is preserved. For Drip's inverse-design use case
+this means soft focus instead of sharp focus at the focal zones —
+whether that matters in practice is not validated here. The full
+discussion is in `docs/METRICS_AND_TRENDS.md § 1.3`.
 
 **What changed between 520 and 866** was the mode count (8×8×24 →
 12×12×36). That's the deliberate change. The model also got ~2.2×
